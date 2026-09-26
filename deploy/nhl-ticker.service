@@ -4,7 +4,7 @@
 # directory, set the mixer to 100%, and backgrounded the script with no supervision --
 # if it crashed, the board simply stopped updating until someone noticed.
 #
-# Install:
+# Install (see deploy/install.sh, which does all of this):
 #   sudo cp deploy/nhl-ticker.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now nhl-ticker
 # Logs:
@@ -14,15 +14,25 @@
 Description=NHL Score Ticker
 Documentation=https://github.com/ncnuech/NHL-Score-Scraper
 # The board lives on the LAN, so do not start before the network is actually up.
-After=network-online.target sound.target
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=nhl
 WorkingDirectory=/opt/nhl-score-ticker/engine
-EnvironmentFile=/opt/nhl-score-ticker/engine/.env
-ExecStart=/usr/local/bin/uv run --extra horn python -m nhl_ticker
+
+# Optional: the leading '-' means a missing .env is not a startup failure. .env is
+# gitignored, so a fresh clone has none and an unprefixed EnvironmentFile would make the
+# unit refuse to start.
+EnvironmentFile=-/opt/nhl-score-ticker/engine/.env
+
+# Run the virtualenv's interpreter directly rather than going through `uv run`. uv wants a
+# writable cache (~/.cache/uv by default), which ProtectHome=true below makes unreachable,
+# so `uv run` here fails at startup. Create the venv once at install time instead; see
+# deploy/install.sh. This is also the usual shape for a service: no resolver on the hot
+# path, no network needed to start.
+ExecStart=/opt/nhl-score-ticker/engine/.venv/bin/python -m nhl_ticker
 
 # The NHL API goes quiet overnight and the Yun drops connections; neither is fatal, so
 # always come back rather than giving up after a burst of restarts.
@@ -40,6 +50,11 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/nhl-score-ticker
+
+# Goal horns need the audio device, which PrivateDevices would hide. Drop this line (and
+# set TICKER_HORN_ENABLED=false) if you are running board-only.
+DeviceAllow=char-alsa rw
+SupplementaryGroups=audio
 
 [Install]
 WantedBy=multi-user.target

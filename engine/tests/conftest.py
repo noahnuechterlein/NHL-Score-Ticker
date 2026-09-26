@@ -22,9 +22,12 @@ def make_goal(team: str, scorer: str, away_score: int, home_score: int, **kwargs
         "period": kwargs.get("period", 1),
         "timeInPeriod": kwargs.get("time", "10:00"),
         "playerId": kwargs.get("player_id", 8400000),
+        # Mirrors the live endpoint's mixed encoding: name/lastName come back as
+        # localisation objects but teamAbbrev is a bare string. Both shapes are pinned in
+        # tests/test_model_resilience.py.
         "name": {"default": scorer},
         "lastName": {"default": scorer},
-        "teamAbbrev": {"default": team},
+        "teamAbbrev": team,
         "strength": kwargs.get("strength", "ev"),
         "goalModifier": kwargs.get("modifier", "none"),
         "assists": kwargs.get("assists", []),
