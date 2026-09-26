@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     horn_dir: Path = _REPO_ROOT / "assets" / "horns"
     horn_max_seconds: float = 10.0
 
+    #: IANA zone for board-facing times. Empty means the host's own local zone, which is
+    #: fine on a desktop but wrong on a Raspberry Pi left at its UTC default -- every game
+    #: would read four or five hours out. Pin it in .env on the board host.
+    timezone: str = ""
+
     # --- local web server ---
     host: str = "127.0.0.1"
     port: int = 8000

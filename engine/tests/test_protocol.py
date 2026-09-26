@@ -9,6 +9,8 @@ from conftest import make_game, make_goal, make_scoreboard
 from nhl_ticker.board import timing
 from nhl_ticker.board.protocol import (
     MARKER_LEN,
+    _status_suffix,
+    start_time_label,
     MAX_VISIBLE_CHARS,
     Segment,
     encode_url,
@@ -403,3 +405,73 @@ def test_start_times_widen_pages_but_pagination_still_holds():
     pages = summary_pages(games)
     assert all(visible_length(p) <= MAX_VISIBLE_CHARS for p in pages)
     assert sum(plain_text(p).count("WSH vs BOS") for p in pages) == 16
+
+
+# ------------------------------------------------------------------ live period labels
+
+
+def _live(period: int, period_type: str, clock: str = "03:12"):
+    raw = make_game(state="LIVE", period=period, period_type=period_type)
+    raw["clock"] = {"timeRemaining": clock}
+    return make_scoreboard(raw).games[0]
+
+
+def test_live_overtime_reads_OT_not_P4():
+    """The board said 'P4' during overtime -- wrong at the moment you most want it."""
+    assert _status_suffix(_live(4, "OT")) == "OT 03:12"
+
+
+def test_live_shootout_reads_SO():
+    """A shootout has no meaningful clock, so the clock is dropped."""
+    assert _status_suffix(_live(5, "SO")) == "SO"
+
+
+def test_live_regulation_periods_are_unchanged():
+    assert _status_suffix(_live(1, "REG")) == "P1 03:12"
+    assert _status_suffix(_live(3, "REG")) == "P3 03:12"
+
+
+def test_a_second_overtime_still_reads_OT():
+    """Playoffs run multiple overtimes; period 6 is still overtime, not 'P6'."""
+    assert _status_suffix(_live(6, "OT")).startswith("OT")
+
+
+def test_finished_games_are_unaffected():
+    for period, ptype, expected in [(3, "REG", "F"), (4, "OT", "F/OT"), (5, "SO", "F/SO")]:
+        game = make_scoreboard(make_game(state="FINAL", period=period, period_type=ptype)).games[0]
+        assert _status_suffix(game) == expected
+
+
+def test_intermission_is_unaffected():
+    raw = make_game(state="LIVE", period=2, period_type="REG")
+    raw["clock"] = {"timeRemaining": "12:00", "inIntermission": True}
+    assert _status_suffix(make_scoreboard(raw).games[0]).startswith("INT")
+
+
+# ------------------------------------------------------------------ start time zone
+
+
+def test_start_times_use_the_configured_timezone():
+    """A Pi left on UTC would otherwise show every game hours off."""
+    raw = make_game(state="FUT")
+    raw["startTimeUTC"] = "2026-10-08T23:00:00Z"
+    game = make_scoreboard(raw).games[0]
+
+    eastern = Settings(timezone="America/New_York")
+    pacific = Settings(timezone="America/Los_Angeles")
+    assert start_time_label(game, eastern) == "7:00"
+    assert start_time_label(game, pacific) == "4:00"
+
+
+def test_an_unknown_timezone_falls_back_instead_of_crashing():
+    raw = make_game(state="FUT")
+    raw["startTimeUTC"] = "2026-10-08T23:00:00Z"
+    game = make_scoreboard(raw).games[0]
+    assert start_time_label(game, Settings(timezone="Not/AZone"))
+
+
+def test_midday_games_are_not_ambiguous():
+    raw = make_game(state="FUT")
+    raw["startTimeUTC"] = "2026-10-08T16:00:00Z"  # noon Eastern
+    game = make_scoreboard(raw).games[0]
+    assert start_time_label(game, Settings(timezone="America/New_York")) == "12:00"

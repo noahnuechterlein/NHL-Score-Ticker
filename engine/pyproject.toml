@@ -9,6 +9,10 @@ dependencies = [
     "pydantic-settings>=2.7",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
+    # zoneinfo reads the operating system's tz database, which Windows does not have at
+    # all and minimal Linux images often omit. Shipping it keeps start times correct
+    # everywhere rather than only on hosts that happen to have tzdata installed.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
