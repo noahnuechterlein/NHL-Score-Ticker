@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from conftest import make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board import timing
@@ -193,10 +195,15 @@ def test_long_message_duration_matches_the_originals_fifteen_second_sleep():
 
 
 def test_static_messages_get_the_minimum_dwell():
-    """The firmware frees itself after delay(2000), so we hold the board ourselves."""
+    """The firmware frees itself after delay(2000), so we hold the board ourselves.
+
+    Asserted as "at least the floor" rather than an exact value: board_hold_margin
+    deliberately pads every hold, so pinning the literal would just re-encode the margin.
+    """
     dwell = timing.display_seconds(10)
-    assert dwell == max(settings.board_min_dwell_seconds, timing.FIRMWARE_STATIC_HOLD_SECONDS)
-    assert dwell >= timing.FIRMWARE_STATIC_HOLD_SECONDS
+    floor = max(settings.board_min_dwell_seconds, timing.FIRMWARE_STATIC_HOLD_SECONDS)
+    assert dwell >= floor
+    assert dwell == floor * settings.board_hold_margin
 
 
 def test_display_time_never_undercuts_the_firmware_hold():
@@ -475,3 +482,28 @@ def test_midday_games_are_not_ambiguous():
     raw["startTimeUTC"] = "2026-10-08T16:00:00Z"  # noon Eastern
     game = make_scoreboard(raw).games[0]
     assert start_time_label(game, Settings(timezone="America/New_York")) == "12:00"
+
+
+# ------------------------------------------------------------------ hold safety margin
+
+
+def test_a_margin_can_be_added_to_every_hold():
+    """board_frame_ms is derived, not measured. If it is even slightly low we write while
+    the sketch is still scrolling and it drops the message with no error at all."""
+    plain = Settings(board_hold_margin=1.0)
+    padded = Settings(board_hold_margin=1.25)
+
+    assert timing.display_seconds(80, padded) == pytest.approx(
+        timing.display_seconds(80, plain) * 1.25
+    )
+
+
+def test_the_margin_applies_to_static_messages_too():
+    plain = Settings(board_hold_margin=1.0)
+    padded = Settings(board_hold_margin=1.5)
+    assert timing.display_seconds(10, padded) > timing.display_seconds(10, plain)
+
+
+def test_the_default_margin_is_on_the_safe_side():
+    """Better to hold the board a moment too long than to have a write silently dropped."""
+    assert Settings().board_hold_margin >= 1.0

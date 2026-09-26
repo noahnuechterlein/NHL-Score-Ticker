@@ -7,6 +7,7 @@ what lets the whole pipeline be developed and tested with no hardware attached.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Protocol
 
@@ -93,6 +94,54 @@ class HttpBoardTransport:
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+
+class RetryingTransport:
+    """Retries a wrapped transport a few times before giving up.
+
+    The board sits on the LAN and the Yun is not especially robust, so a single dropped
+    write is routine. Previously that meant a goal alert was simply lost -- the NHL client
+    retried three times while the board got exactly one attempt. Unlike the original,
+    which recursed into itself on failure, this gives up after a bounded number of tries.
+    """
+
+    def __init__(
+        self,
+        inner: BoardTransport,
+        attempts: int = 3,
+        backoff_seconds: float = 0.25,
+    ) -> None:
+        self._inner = inner
+        self._attempts = max(1, attempts)
+        self._backoff = backoff_seconds
+
+    @property
+    def is_hardware(self) -> bool:
+        return getattr(self._inner, "is_hardware", False)
+
+    @property
+    def online(self) -> bool | None:
+        return getattr(self._inner, "online", None)
+
+    async def _attempt(self, action, what: str) -> bool:
+        for attempt in range(1, self._attempts + 1):
+            if await action():
+                if attempt > 1:
+                    log.info("board %s succeeded on attempt %d", what, attempt)
+                return True
+            if attempt < self._attempts:
+                await asyncio.sleep(self._backoff * attempt)
+        log.warning("board %s failed after %d attempts", what, self._attempts)
+        return False
+
+    async def send(self, payload: str) -> bool:
+        return await self._attempt(lambda: self._inner.send(payload), "write")
+
+    async def clear(self) -> bool:
+        return await self._attempt(self._inner.clear, "clear")
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 class FanOutTransport:

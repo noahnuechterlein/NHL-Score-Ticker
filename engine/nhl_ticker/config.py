@@ -54,6 +54,25 @@ class Settings(BaseSettings):
     #: The sketch's own hold after a non-scrolling message: delay(2000) in ledTextDisplay.
     #: Configurable because it is a property of the flashed firmware, not a law of physics.
     board_static_hold_seconds: float = 2.0
+    #: Multiplier on every computed hold. board_frame_ms is derived from the sketch, not
+    #: measured, and if it is even slightly low we write while the board is still
+    #: scrolling -- which the sketch discards silently. Erring long costs a moment of
+    #: dwell; erring short loses the message entirely.
+    board_hold_margin: float = 1.1
+    #: Attempts per board write. The NHL client retries but the board used to get one try,
+    #: so a single LAN blip dropped a goal alert outright.
+    board_write_attempts: int = 3
+    board_write_backoff_seconds: float = 0.25
+    #: Clear the board when the service shuts down, rather than leaving the last message
+    #: frozen there indefinitely.
+    board_clear_on_exit: bool = True
+
+    #: Drop goal alerts older than this. A burst of goals each holding 8-16s can otherwise
+    #: push the board minutes behind live play, announcing goals long after the fact.
+    goal_max_age_seconds: float = 300.0
+    #: Hard cap on queued messages, so a stalled board cannot grow the backlog without end.
+    queue_max_items: int = 64
+
     #: Brightness byte appended to every ~RRGGBB colour code.
     board_brightness: str = "30"
     #: Target visible width of one page of the slate summary. A full 16-game night does not

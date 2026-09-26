@@ -59,6 +59,10 @@ def display_seconds(visible_chars: int, settings: Settings | None = None) -> flo
     """
     cfg = settings or default_settings
     floor = max(cfg.board_min_dwell_seconds, cfg.board_static_hold_seconds)
-    if not scrolls(visible_chars, cfg):
-        return floor
-    return max(scroll_seconds(visible_chars, cfg), floor)
+    base = floor if not scrolls(visible_chars, cfg) else max(
+        scroll_seconds(visible_chars, cfg), floor
+    )
+    # board_frame_ms is derived rather than measured, so hold a little longer than the
+    # estimate. A write that lands mid-scroll is discarded by the sketch without any
+    # error, which is far worse than a moment of extra dwell.
+    return base * cfg.board_hold_margin

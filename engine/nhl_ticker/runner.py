@@ -80,7 +80,7 @@ class TickerService:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        await self._queue.stop()
+        await self._queue.stop(clear=self._settings.board_clear_on_exit)
 
     def request_poll(self) -> None:
         """Ask the loop to come round immediately instead of waiting out its interval."""

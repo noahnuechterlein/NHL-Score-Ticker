@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .board.queue import BoardQueue
-from .board.transport import FanOutTransport, HttpBoardTransport, NullTransport
+from .board.transport import (
+    FanOutTransport,
+    HttpBoardTransport,
+    NullTransport,
+    RetryingTransport,
+)
 from .config import settings
 from .core.league import TEAMS
 from .nhl.client import NHLClient
@@ -32,7 +37,13 @@ def build_service() -> TickerService:
 
     transports = [BroadcastTransport(hub)]
     if settings.board_enabled:
-        transports.append(HttpBoardTransport(settings))
+        transports.append(
+            RetryingTransport(
+                HttpBoardTransport(settings),
+                attempts=settings.board_write_attempts,
+                backoff_seconds=settings.board_write_backoff_seconds,
+            )
+        )
         log.info("board sink enabled -> %s", settings.board_url_base)
     else:
         transports.append(NullTransport())

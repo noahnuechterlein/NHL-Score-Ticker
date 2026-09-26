@@ -32,7 +32,7 @@ import time
 from dataclasses import dataclass, field
 
 from ..config import Settings, settings as default_settings
-from ..core.events import Event, Priority, SummaryTick
+from ..core.events import Event, GoalEvent, Priority, SummaryTick
 from ..nhl.models import Game
 from . import timing
 from .protocol import payloads_for, plain_text, summary_pages, visible_length
@@ -51,6 +51,8 @@ class _QueueItem:
     sequence: int
     event: Event = field(compare=False)
     payload: str = field(compare=False, default="")
+    #: Monotonic timestamp of submission, for staleness checks.
+    queued_at: float = field(compare=False, default=0.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +143,7 @@ class BoardQueue:
                 "the slate summary is idle content, not a queued event -- use set_summary()"
             )
 
+        now = time.monotonic()
         for payload in payloads_for(event, self._settings):
             self._items.append(
                 _QueueItem(
@@ -148,9 +151,38 @@ class BoardQueue:
                     sequence=next(self._counter),
                     event=event,
                     payload=payload,
+                    queued_at=now,
                 )
             )
+
+        self._enforce_bound()
         self._wakeup.set()
+
+    def _enforce_bound(self) -> None:
+        """Cap the backlog, shedding the oldest first.
+
+        If the board stalls, an unbounded queue grows without limit. When something has to
+        go, the oldest goals are the least worth showing -- by the time we caught up they
+        would be minutes stale anyway.
+        """
+        limit = self._settings.queue_max_items
+        if limit <= 0 or len(self._items) <= limit:
+            return
+        dropped = len(self._items) - limit
+        self._items.sort(key=lambda item: item.sequence)
+        self._items = self._items[dropped:]
+        log.warning("board queue over %d items; dropped %d oldest", limit, dropped)
+
+    def _is_stale(self, item: _QueueItem) -> bool:
+        """Goal alerts expire; everything else stays queued.
+
+        A summary is regenerated each poll so it cannot go stale, and start/end events are
+        rare enough to be worth showing late.
+        """
+        max_age = self._settings.goal_max_age_seconds
+        if max_age <= 0 or not isinstance(item.event, GoalEvent):
+            return False
+        return (time.monotonic() - item.queued_at) > max_age
 
     def set_summary(self, games: list[Game]) -> None:
         """Replace the slate summary the board falls back to when it is otherwise idle.
@@ -175,7 +207,11 @@ class BoardQueue:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run(), name="board-queue")
 
-    async def stop(self) -> None:
+    async def stop(self, clear: bool = False) -> None:
+        """Stop the consumer, optionally blanking the board on the way out.
+
+        Without the clear the board keeps displaying whatever it last received, forever.
+        """
         if self._task is not None:
             self._task.cancel()
             try:
@@ -183,13 +219,18 @@ class BoardQueue:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        if clear:
+            await self.clear()
 
     def _pop(self) -> _QueueItem | None:
-        if not self._items:
-            return None
-        best = min(self._items)
-        self._items.remove(best)
-        return best
+        """Highest-priority item that is still worth showing."""
+        while self._items:
+            best = min(self._items)
+            self._items.remove(best)
+            if not self._is_stale(best):
+                return best
+            log.info("dropping stale alert: %s", plain_text(best.payload).strip())
+        return None
 
     def _next_summary_page(self) -> str | None:
         """The next page of the slate summary, advancing the rotation."""
