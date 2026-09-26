@@ -1,0 +1,45 @@
+# systemd unit for the host that talks to the LED board (typically a Pi on the same LAN).
+#
+# Replaces the original's run.sh, which slept 60 seconds, cd'd to a hardcoded home
+# directory, set the mixer to 100%, and backgrounded the script with no supervision --
+# if it crashed, the board simply stopped updating until someone noticed.
+#
+# Install:
+#   sudo cp deploy/nhl-ticker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now nhl-ticker
+# Logs:
+#   journalctl -u nhl-ticker -f
+
+[Unit]
+Description=NHL Score Ticker
+Documentation=https://github.com/ncnuech/NHL-Score-Scraper
+# The board lives on the LAN, so do not start before the network is actually up.
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nhl
+WorkingDirectory=/opt/nhl-score-ticker/engine
+EnvironmentFile=/opt/nhl-score-ticker/engine/.env
+ExecStart=/usr/local/bin/uv run --extra horn python -m nhl_ticker
+
+# The NHL API goes quiet overnight and the Yun drops connections; neither is fatal, so
+# always come back rather than giving up after a burst of restarts.
+Restart=always
+RestartSec=10s
+StartLimitIntervalSec=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nhl-ticker
+
+# It only needs to reach the NHL API, the board, and the sound device.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nhl-score-ticker
+
+[Install]
+WantedBy=multi-user.target

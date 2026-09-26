@@ -12,6 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Audio is optional: the engine runs board-only without it, and the sink degrades to
+# logging rather than failing if the package is absent.
+horn = [
+    "just-playback>=0.1.8",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
