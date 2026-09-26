@@ -197,7 +197,9 @@ class TickerService:
             # drift apart as soon as board_frame_ms is calibrated against real hardware.
             "boardFrameMs": self._settings.board_frame_ms,
             "boardOnline": self._queue.hardware_online,
+            # The engine host's own speaker. The website plays horns independently.
             "hornEnabled": self._settings.horn_enabled,
+            "hornMaxSeconds": self._settings.horn_max_seconds,
             "lastError": self.last_error,
         }
 

@@ -6,6 +6,13 @@ import type { Game, QueueState, ServerMessage, TickerEvent } from "./types";
 const RECONNECT_MS = 2000;
 const MAX_LOG = 40;
 
+/** The most recent goal, carrying a unique `at` so two goals by the same team both fire. */
+export interface GoalPing {
+  team: string;
+  scorer: string;
+  at: number;
+}
+
 export interface BoardState {
   payload: string;
   text: string;
@@ -37,6 +44,8 @@ export function useTicker() {
   const [boardFrameMs, setBoardFrameMs] = useState(33);
   const [boardOnline, setBoardOnline] = useState<boolean | null>(null);
   const [hornEnabled, setHornEnabled] = useState(false);
+  const [hornMaxSeconds, setHornMaxSeconds] = useState(10);
+  const [lastGoal, setLastGoal] = useState<GoalPing | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -67,6 +76,7 @@ export function useTicker() {
             setBoardFrameMs(message.boardFrameMs);
             setBoardOnline(message.boardOnline);
             setHornEnabled(message.hornEnabled);
+            setHornMaxSeconds(message.hornMaxSeconds);
             setError(message.lastError);
             break;
           case "scoreboard":
@@ -100,6 +110,14 @@ export function useTicker() {
           case "event": {
             const { type: _type, ...event } = message;
             setEvents((previous) => [event, ...previous].slice(0, MAX_LOG));
+            if (event.kind === "GoalEvent" && event.team) {
+              // Distinct object per goal, so an effect fires even for a repeat scorer.
+              setLastGoal({
+                team: event.team,
+                scorer: event.scorer ?? "",
+                at: Date.now(),
+              });
+            }
             break;
           }
           case "error":
@@ -138,6 +156,8 @@ export function useTicker() {
     boardFrameMs,
     boardOnline,
     hornEnabled,
+    hornMaxSeconds,
+    lastGoal,
     error,
     clearError: () => setError(null),
     fakeGoal: (team?: string) =>

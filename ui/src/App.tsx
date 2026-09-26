@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Eraser, RefreshCw, Repeat, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eraser, RefreshCw, Repeat, Volume2, VolumeX, Zap } from "lucide-react";
 import EventLog from "./components/EventLog";
 import GameList from "./components/GameList";
 import LedBoard from "./components/LedBoard";
 import QueueInspector from "./components/QueueInspector";
 import { markersIn } from "./payload";
+import { useHorn } from "./useHorn";
 import { useTicker } from "./useTicker";
 
 function Pill({ on, label }: { on: boolean; label: string }) {
@@ -46,7 +47,16 @@ function Button({
 
 export default function App() {
   const ticker = useTicker();
+  const horn = useHorn(ticker.hornMaxSeconds);
   const [team, setTeam] = useState("");
+
+  // Fires on every goal the engine reports, including injected test goals. Timed with the
+  // event rather than the board message, matching when the engine's own horn sounds.
+  useEffect(() => {
+    if (ticker.lastGoal) horn.play(ticker.lastGoal.team);
+    // horn.play is stable; depending on it would re-fire on every volume change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker.lastGoal]);
 
   const payload = ticker.board?.payload ?? "";
   const teamsPlaying = Array.from(
@@ -67,10 +77,42 @@ export default function App() {
           />
           <Pill on={ticker.hornEnabled} label="horn" />
         </div>
-        <span className="ml-auto font-mono text-[11px] text-zinc-600">
-          polling every {ticker.pollSeconds}s
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={horn.toggle}
+            title={horn.enabled ? "Mute goal horns" : "Play goal horns in this browser"}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+              horn.enabled
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:border-zinc-600"
+            }`}
+          >
+            {horn.enabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+            {horn.enabled ? "Horns on" : "Horns off"}
+          </button>
+          {horn.enabled && (
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={horn.volume}
+              onChange={(event) => horn.setVolume(Number(event.target.value))}
+              title={`Volume ${Math.round(horn.volume * 100)}%`}
+              className="h-1 w-20 accent-emerald-500"
+            />
+          )}
+          <span className="font-mono text-[11px] text-zinc-600">
+            polling every {ticker.pollSeconds}s
+          </span>
+        </div>
       </header>
+
+      {horn.blocked && (
+        <div className="rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+          The browser blocked audio. Click anywhere on the page, then try a goal again.
+        </div>
+      )}
 
       {ticker.error && (
         <div className="flex items-start gap-2 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">

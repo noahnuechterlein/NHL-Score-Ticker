@@ -69,7 +69,9 @@ export interface Snapshot {
   boardFrameMs: number;
   /** null when no physical board is configured. */
   boardOnline: boolean | null;
+  /** The engine host's own speaker. The website plays horns independently. */
   hornEnabled: boolean;
+  hornMaxSeconds: number;
   lastError: string | null;
 }
 

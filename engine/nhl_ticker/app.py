@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .board.queue import BoardQueue
@@ -23,7 +23,7 @@ from .board.transport import (
     RetryingTransport,
 )
 from .config import settings
-from .core.league import TEAMS
+from .core.league import TEAMS, horn_path
 from .nhl.client import NHLClient
 from .runner import TickerService
 from .sinks.broadcast import BroadcastHub, BroadcastTransport
@@ -104,9 +104,34 @@ async def get_teams():
             "name": t.name,
             "color": f"#{t.color}",
             "hasRealHorn": t.has_real_horn,
+            "hornUrl": f"/api/horn/{t.abbrev}",
         }
         for t in sorted(TEAMS.values(), key=lambda t: t.abbrev)
     ]
+
+
+@app.get("/api/horn/{abbrev}")
+async def get_horn(abbrev: str):
+    """The scoring team's goal horn, for the browser to play.
+
+    Served by abbreviation so the engine keeps owning the team-to-file mapping, fallbacks
+    and all, instead of that table being duplicated in TypeScript. Unknown teams get the
+    generic horn, exactly as the board does.
+
+    Independent of ``TICKER_HORN_ENABLED``: that switch is for the engine host's own
+    speaker, which is a different machine from whatever is showing the website.
+    """
+    # Resolved through the league table, never by joining the abbreviation onto a path,
+    # so a crafted abbreviation cannot escape the horn directory.
+    path = horn_path(abbrev, settings.horn_dir)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"no horn available for {abbrev}")
+    return FileResponse(
+        path,
+        media_type="audio/mpeg",
+        # Static megabytes; there is no reason to refetch one every goal.
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.post("/api/poll")
