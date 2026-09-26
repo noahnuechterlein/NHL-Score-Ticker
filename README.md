@@ -65,7 +65,8 @@ engine now counts entries in `goals[]`, so both report with their real scorers.
 *inside its poll loop*, so for fifteen seconds after every goal it was neither watching for
 new goals nor able to report them. A single consumer task now owns the board and paces
 writes against the sketch's `cmdDisplayed` flag; the poller enqueues and returns
-immediately. Goals pre-empt summaries, and stale summaries coalesce.
+immediately. Goals pre-empt the slate summary, which is idle content the board falls
+back to rather than a queued item.
 
 **Poll cadence** follows game state (live / pre-game / idle) instead of hardcoded
 wall-clock rules that assumed evening games in one timezone. Failures back off separately,
