@@ -1,0 +1,15 @@
+{
+  "goal": "~ffffe630     ~ff000030WSH~ffffe630 3-2 ~fcb93030BOS~ffffe630  ~ff000030WSH~ffffe630 Goal! Kyrou PP (J. Chychrun)",
+  "goal_accented": "~ffffe630     ~ff000030WSH~ffffe630 1-0 ~fcb93030BOS~ffffe630  ~d47e0030OTT~ffffe630 Goal! Stutzle PP (O. Back)",
+  "game_end_ot": "~ffffe630     ~ff000030WSH~ffffe630 3-2 ~fcb93030BOS~ffffe630 F/OT",
+  "game_start": "~ffffe630     ~ff000030WSH~ffffe630 vs ~fcb93030BOS~ffffe630 underway",
+  "summary_finished": "~ffffe630     ~ff000030WSH~ffffe630 3-2 ~fcb93030BOS~ffffe630 F/OT   ~ff500030NYI~ffffe630 1-6 ~005dab30NYR~ffffe630 F   ~103d1730MIN~ffffe630 1-2 ~084c0030DAL~ffffe630 F   ~83001830COL~ffffe630 5-2 ~002e6230WPG~ffffe630 F",
+  "summary_pages_scheduled": [
+    "~ffffe630     ~fcb93030BOS~ffffe630 vs ~71afe530UTA~ffffe630 6:00   ~9e4e0030BUF~ffffe630 vs ~084c0030DAL~ffffe630 6:00   ~ff000030MTL~ffffe630 vs ~ffb71a30NSH~ffffe630 6:00",
+    "~ffffe630     ~d47e0030OTT~ffffe630 vs ~f32b0030PHI~ffffe630 6:00   ~ffffff30TBL~ffffe630 vs ~103d1730MIN~ffffe630 6:00   ~ff000030CAR~ffffe630 vs ~013e7f30VAN~ffffe630 6:00",
+    "~ffffe630     ~ff500030NYI~ffffe630 vs ~48000030CHI~ffffe630 6:30   ~08337730STL~ffffe630 vs ~00765d30SJS~ffffe630 7:00   ~c9000030CGY~ffffe630 vs ~83001830COL~ffffe630 8:00",
+    "~ffffe630     ~b4975a30VGK~ffffe630 vs ~013e7f30TOR~ffffe630 9:00"
+  ],
+  "goal_url": "http://10.177.105.137/arduino/text/~ffffe630%20%20%20%20%20~ff000030WSH~ffffe630%203-2%20~fcb93030BOS~ffffe630%20%20~ff000030WSH~ffffe630%20Goal!%20Kyrou%20PP%20(J.%20Chychrun)",
+  "game_end_url": "http://10.177.105.137/arduino/text/~ffffe630%20%20%20%20%20~ff000030WSH~ffffe630%203-2%20~fcb93030BOS~ffffe630%20F/OT"
+}

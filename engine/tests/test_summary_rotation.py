@@ -16,7 +16,12 @@ import asyncio
 import pytest
 from conftest import make_game, make_scoreboard
 
-from nhl_ticker.board.protocol import plain_text, summary_pages
+from nhl_ticker.board.protocol import (
+    plain_text,
+)
+from nhl_ticker.board.messages import (
+    summary_pages,
+)
 from nhl_ticker.board.queue import BoardQueue
 from nhl_ticker.board.transport import NullTransport
 from nhl_ticker.config import Settings

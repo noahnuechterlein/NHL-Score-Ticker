@@ -7,7 +7,12 @@ TypeScript side.
 
 from __future__ import annotations
 
-from ..board.protocol import payload_for, plain_text
+from ..board.protocol import (
+    plain_text,
+)
+from ..board.messages import (
+    payload_for,
+)
 from .events import Event, GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 from .league import team
 from ..nhl.models import Game

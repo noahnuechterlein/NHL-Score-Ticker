@@ -1,4 +1,7 @@
-"""Building the payload strings the Arduino sketch expects.
+"""The wire format: turning coloured text into the exact bytes the sketch expects.
+
+This module knows about the Arduino's encoding and nothing about hockey. Composing a
+message out of a game event lives in ``messages.py``.
 
 Wire format, from ``ledText::parseText`` in LEDWebText.ino: the text is plain ASCII, and a
 tilde introduces a nine-character colour marker ``~RRGGBBLL`` -- six hex digits of colour
@@ -19,19 +22,13 @@ Two hard limits come out of the firmware:
 
 from __future__ import annotations
 
-import logging
 import unicodedata
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import quote
 
 from ..config import Settings, settings as default_settings
-from ..core.events import Event, GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
-from ..core.league import DEFAULT_TEAM, team
-from ..nhl.models import Game, PeriodType
-
-log = logging.getLogger(__name__)
+from ..core.league import DEFAULT_TEAM
 
 #: Longest visible string we will send. See the module docstring -- above this the sketch
 #: writes past the end of its character buffer.
@@ -54,7 +51,7 @@ LEAD_IN = "     "
 #: ``#``, ``?`` and non-ASCII are escaped now.
 #:
 #: A literal ``/`` in the text is safe: ``cmdParse`` splits on the first one only.
-URL_SAFE = "~!$&'()*+,;=:@/-._"
+URL_SAFE = "~!$&\'()*+,;=:@/-._"
 
 #: The sketch replaces anything outside this range with a space (``if (ch<32 || ch>126)``).
 PRINTABLE_MIN, PRINTABLE_MAX = 32, 126
@@ -107,18 +104,26 @@ def render(segments: list[Segment], settings: Settings | None = None) -> str:
     return "".join(out)
 
 
-def visible_length(payload: str) -> int:
-    """Count displayed characters, skipping colour markers the way the sketch does."""
-    count = 0
+def walk(payload: str) -> Iterator[tuple[str, bool]]:
+    """Yield ``(chunk, is_marker)`` across a payload, exactly as the sketch reads it.
+
+    ``parseText`` consumes a marker whether or not it is complete, so a truncated one at
+    the end swallows the remainder. Counting, stripping and truncating all used to
+    re-implement this walk separately; they share it now so they cannot drift apart.
+    """
     index = 0
     while index < len(payload):
         if payload[index] == "~":
-            # parseText consumes the marker whether or not it is complete.
+            yield payload[index : index + MARKER_LEN], True
             index += MARKER_LEN
             continue
-        count += 1
+        yield payload[index], False
         index += 1
-    return count
+
+
+def visible_length(payload: str) -> int:
+    """Count displayed characters, skipping colour markers the way the sketch does."""
+    return sum(1 for _, is_marker in walk(payload) if not is_marker)
 
 
 def plain_text(payload: str) -> str:
@@ -126,32 +131,21 @@ def plain_text(payload: str) -> str:
 
     Used for log lines and for the UI's human-readable echo of each board message.
     """
-    out: list[str] = []
-    index = 0
-    while index < len(payload):
-        if payload[index] == "~":
-            index += MARKER_LEN
-            continue
-        out.append(payload[index])
-        index += 1
-    return "".join(out)
+    return "".join(chunk for chunk, is_marker in walk(payload) if not is_marker)
 
 
 def truncate(payload: str, limit: int = MAX_VISIBLE_CHARS) -> str:
     """Trim to ``limit`` *visible* characters, keeping colour markers intact."""
-    if visible_length(payload) <= limit:
-        return payload
     out: list[str] = []
     shown = 0
-    index = 0
-    while index < len(payload) and shown < limit:
-        if payload[index] == "~":
-            out.append(payload[index : index + MARKER_LEN])
-            index += MARKER_LEN
+    for chunk, is_marker in walk(payload):
+        if is_marker:
+            out.append(chunk)
             continue
-        out.append(payload[index])
+        if shown >= limit:
+            break
+        out.append(chunk)
         shown += 1
-        index += 1
     return "".join(out)
 
 
@@ -159,199 +153,3 @@ def encode_url(payload: str, settings: Settings | None = None) -> str:
     """Full board URL for a payload. See URL_SAFE for why the safe set is so wide."""
     cfg = settings or default_settings
     return f"{cfg.board_url_base}/text/{quote(payload, safe=URL_SAFE)}"
-
-
-# --------------------------------------------------------------------------- formatting
-
-
-def _team_segment(abbrev: str) -> Segment:
-    info = team(abbrev)
-    return Segment(info.abbrev, info.color)
-
-
-def _score_line(game: Game) -> list[Segment]:
-    """``HOME 3-2 AWAY`` with each abbreviation in its team colour.
-
-    Home first, matching the original's printableGameList.
-    """
-    return [
-        _team_segment(game.home_team.abbrev),
-        Segment(f" {game.home_team.score}-{game.away_team.score} "),
-        _team_segment(game.away_team.abbrev),
-    ]
-
-
-def _status_suffix(game: Game) -> str:
-    """Short status token: F, F/OT, F/SO, or the running clock."""
-    if game.is_over:
-        descriptor = game.game_outcome.last_period_type if game.game_outcome else None
-        if descriptor is None and game.period_descriptor:
-            descriptor = game.period_descriptor.period_type
-        if descriptor == PeriodType.OT:
-            return "F/OT"
-        if descriptor == PeriodType.SO:
-            return "F/SO"
-        return "F"
-    if game.clock and game.clock.in_intermission:
-        return f"INT{game.period or ''}"
-
-    # Name the period rather than numbering it. Overtime is period 4 and a shootout
-    # period 5, so numbering them read "P4" and "P5" on the board -- least useful at
-    # exactly the moment the board matters most.
-    descriptor = game.period_descriptor.period_type if game.period_descriptor else None
-    if descriptor == PeriodType.SO:
-        return "SO"  # a shootout has no meaningful clock
-    label = "OT" if descriptor == PeriodType.OT else f"P{game.period or 1}"
-
-    if game.clock and game.clock.time_remaining:
-        return f"{label} {game.clock.time_remaining}"
-    return label
-
-
-def _display_zone(settings: Settings | None = None) -> ZoneInfo | None:
-    """The configured zone, or None to mean "whatever the host thinks local is"."""
-    cfg = settings or default_settings
-    if not cfg.timezone:
-        return None
-    try:
-        return ZoneInfo(cfg.timezone)
-    except (ZoneInfoNotFoundError, ValueError):
-        log.warning("unknown timezone %r; falling back to host local", cfg.timezone)
-        return None
-
-
-def start_time_label(game: Game, settings: Settings | None = None) -> str:
-    """Start time for a game that has not begun, e.g. "7:00".
-
-    Rendered without a meridiem to stay narrow, as the original did; the NHL does not
-    schedule games at hours where 12-hour time is ambiguous.
-    """
-    if not game.start_time_utc:
-        return ""
-    try:
-        moment = datetime.fromisoformat(game.start_time_utc.replace("Z", "+00:00"))
-    except ValueError:
-        return ""
-    local = moment.astimezone(_display_zone(settings))
-    return f"{(local.hour % 12) or 12}:{local.minute:02d}"
-
-
-def _strength_tag(goal) -> str:
-    if goal.is_empty_net:
-        return " EN"
-    if goal.strength == "pp":
-        return " PP"
-    if goal.strength == "sh":
-        return " SH"
-    return ""
-
-
-def goal_segments(event: GoalEvent) -> list[Segment]:
-    """``WSH 3-2 BOS  WSH Goal! Ovechkin PP (Wilson, Dubois)``"""
-    segments = [Segment(LEAD_IN), *_score_line(event.game), Segment("  ")]
-    segments.append(_team_segment(event.scoring_abbrev))
-    segments.append(Segment(" Goal! "))
-
-    scorer = event.goal.scorer_last_name
-    if scorer:
-        segments.append(Segment(scorer + _strength_tag(event.goal)))
-    assists = ", ".join(a.name for a in event.goal.assists if a.name)
-    if assists:
-        segments.append(Segment(f" ({assists})"))
-    return segments
-
-
-def game_start_segments(event: GameStartEvent) -> list[Segment]:
-    game = event.game
-    return [
-        Segment(LEAD_IN),
-        _team_segment(game.home_team.abbrev),
-        Segment(" vs "),
-        _team_segment(game.away_team.abbrev),
-        Segment(" underway"),
-    ]
-
-
-def game_end_segments(event: GameEndEvent) -> list[Segment]:
-    suffix = _status_suffix(event.game)
-    return [Segment(LEAD_IN), *_score_line(event.game), Segment(f" {suffix}" if suffix else "")]
-
-
-def summary_segments(games: list[Game], settings: Settings | None = None) -> list[Segment]:
-    """Every game on the slate, in one scrolling line.
-
-    Unstarted games show their start time rather than a 0-0 score, which is what the
-    original's printableGameList did.
-    """
-    segments: list[Segment] = [Segment(LEAD_IN)]
-    for index, game in enumerate(games):
-        if index:
-            segments.append(Segment("   "))
-        if not game.has_started:
-            segments.extend(
-                [
-                    _team_segment(game.home_team.abbrev),
-                    Segment(" vs "),
-                    _team_segment(game.away_team.abbrev),
-                ]
-            )
-            start = start_time_label(game, settings)
-            if start:
-                segments.append(Segment(f" {start}"))
-        else:
-            segments.extend(_score_line(game))
-            suffix = _status_suffix(game)
-            if suffix:
-                segments.append(Segment(f" {suffix}"))
-    return segments
-
-
-def summary_pages(games: list[Game], settings: Settings | None = None) -> list[str]:
-    """Split the slate into board-sized pages, packed greedily.
-
-    A 16-game night overflows the 149-character buffer, so without this the tail of the
-    slate would simply never be shown. Pages also bound how long a goal alert can sit
-    behind a summary, since the board cannot be interrupted mid-scroll.
-    """
-    cfg = settings or default_settings
-    limit = min(cfg.board_summary_max_chars, MAX_VISIBLE_CHARS)
-
-    pages: list[str] = []
-    current: list[Game] = []
-    for game in games:
-        candidate = current + [game]
-        if current and visible_length(render(summary_segments(candidate, cfg), cfg)) > limit:
-            pages.append(truncate(render(summary_segments(current, cfg), cfg)))
-            current = [game]
-        else:
-            current = candidate
-    if current:
-        pages.append(truncate(render(summary_segments(current, cfg), cfg)))
-    return pages
-
-
-def payloads_for(event: Event, settings: Settings | None = None) -> list[str]:
-    """Every board message this event produces. Only summaries yield more than one."""
-    if isinstance(event, SummaryTick):
-        return summary_pages(event.games, settings) or [
-            render([Segment(LEAD_IN)], settings)
-        ]
-    return [payload_for(event, settings)]
-
-
-def segments_for(event: Event, settings: Settings | None = None) -> list[Segment]:
-    match event:
-        case GoalEvent():
-            return goal_segments(event)
-        case GameEndEvent():
-            return game_end_segments(event)
-        case GameStartEvent():
-            return game_start_segments(event)
-        case SummaryTick():
-            return summary_segments(event.games, settings)
-    raise TypeError(f"no board formatting for {type(event).__name__}")
-
-
-def payload_for(event: Event, settings: Settings | None = None) -> str:
-    """The exact string sent to the board -- and to the UI emulator."""
-    return truncate(render(segments_for(event, settings), settings))

@@ -5,10 +5,8 @@ back onto the board queue, and go back to sleep. It never waits on the board, ne
 audio inline, and never sleeps on behalf of a display -- all of which the original did
 inside this same loop.
 
-Poll cadence follows game state rather than the wall clock. The original hardcoded
-``if hour == 3: clear``, ``if hour == 7: startDay``, and a delay that flipped between 10 s
-and an hour on fixed boundaries, which broke for afternoon games and for anyone in a
-different timezone than the author.
+Interval selection and failure backoff live in :mod:`nhl_ticker.cadence`; this module is
+the loop and the fan-out to sinks.
 """
 
 from __future__ import annotations
@@ -18,6 +16,7 @@ import logging
 import random
 
 from .board.queue import BoardMessage, BoardQueue
+from .cadence import Cadence
 from .config import Settings, settings as default_settings
 from .core.events import Event, GoalEvent
 from .core.serialize import event_to_dict, game_to_dict
@@ -50,8 +49,7 @@ class TickerService:
 
         self._task: asyncio.Task | None = None
         self._poll_now = asyncio.Event()
-        #: Consecutive failed polls, driving the retry backoff.
-        self._failures = 0
+        self._cadence = Cadence(self._settings)
 
     @property
     def hub(self) -> BroadcastHub:
@@ -89,40 +87,18 @@ class TickerService:
     # ------------------------------------------------------------------ cadence
 
     def poll_interval(self, scoreboard: Scoreboard | None) -> float:
-        """Fast while anything is live, slow before puck drop, idle once the slate is done."""
-        if scoreboard is None or not scoreboard.games:
-            return self._settings.poll_idle_seconds
-        if any(game.is_live for game in scoreboard.games):
-            return self._settings.poll_live_seconds
-        if any(not game.has_started for game in scoreboard.games):
-            return self._settings.poll_pregame_seconds
-        return self._settings.poll_idle_seconds
+        """The healthy poll interval for a slate, ignoring any failure backoff."""
+        return self._cadence.healthy_interval(scoreboard)
 
     def note_failure(self) -> None:
-        self._failures += 1
+        self._cadence.note_failure()
 
     def note_success(self) -> None:
-        self._failures = 0
+        self._cadence.note_success()
 
     def next_interval(self) -> float:
-        """How long to wait before the next poll.
-
-        While healthy this is just the state-derived cadence. After a failure it is an
-        exponential backoff instead -- the healthy cadence is wrong here, because a
-        failure usually means ``self.scoreboard`` is stale or absent, and an absent
-        scoreboard reads as "idle", i.e. up to half an hour of silence after a single
-        blip at startup.
-
-        The backoff is also capped by the healthy interval: failing during live play must
-        never make us poll more slowly than live play already demands.
-        """
-        healthy = self.poll_interval(self.scoreboard)
-        if not self._failures:
-            return healthy
-
-        backoff = self._settings.poll_error_seconds * (2 ** (self._failures - 1))
-        backoff = min(backoff, self._settings.poll_error_max_seconds)
-        return min(backoff, healthy)
+        """How long to wait before the next poll, given the slate and any failures."""
+        return self._cadence.next_interval(self.scoreboard)
 
     # ------------------------------------------------------------------ the loop
 
@@ -138,7 +114,7 @@ class TickerService:
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 log.warning(
                     "poll failed (%d in a row), retrying in %.0fs: %s",
-                    self._failures,
+                    self._cadence.failures,
                     self.next_interval(),
                     self.last_error,
                 )

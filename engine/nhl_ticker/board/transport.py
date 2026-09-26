@@ -14,7 +14,10 @@ from typing import Protocol
 import httpx
 
 from ..config import Settings, settings as default_settings
-from .protocol import encode_url, plain_text
+from .protocol import (
+    encode_url,
+    plain_text,
+)
 
 log = logging.getLogger(__name__)
 

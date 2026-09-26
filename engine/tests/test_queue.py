@@ -8,7 +8,9 @@ import pytest
 from conftest import make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board import timing
-from nhl_ticker.board.protocol import plain_text
+from nhl_ticker.board.protocol import (
+    plain_text,
+)
 from nhl_ticker.board.queue import BoardQueue
 from nhl_ticker.board.transport import FanOutTransport, HttpBoardTransport, NullTransport
 from nhl_ticker.config import Settings

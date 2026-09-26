@@ -11,20 +11,23 @@ from conftest import make_game, make_goal, make_scoreboard
 from nhl_ticker.board import timing
 from nhl_ticker.board.protocol import (
     MARKER_LEN,
-    _status_suffix,
-    start_time_label,
     MAX_VISIBLE_CHARS,
     Segment,
     encode_url,
     marker,
-    payload_for,
-    payloads_for,
     plain_text,
     render,
-    summary_pages,
     truncate,
     visible_length,
 )
+from nhl_ticker.board.messages import (
+    _status_suffix,
+    payload_for,
+    payloads_for,
+    start_time_label,
+    summary_pages,
+)
+
 from nhl_ticker.config import Settings, settings
 from nhl_ticker.core.events import GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 from nhl_ticker.core.league import team
@@ -267,12 +270,19 @@ def test_an_empty_slate_produces_no_pages():
     assert summary_pages([]) == []
 
 
-def test_payloads_for_expands_summaries_but_not_goals():
-    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(16)]).games
-    assert len(payloads_for(SummaryTick(games=games))) > 1
+def test_payloads_for_returns_one_message_per_event():
+    """Replaced test_payloads_for_expands_summaries_but_not_goals.
 
+    That test covered a SummaryTick branch that became unreachable once the queue started
+    treating the slate as idle content: submit() rejects summaries and set_summary()
+    calls summary_pages directly. The branch is gone; pagination is covered by the
+    summary_pages tests above and by tests/test_summary_rotation.py.
+    """
     event = _goal_event(home_score=1, goals=[make_goal("WSH", "Ovechkin", 0, 1)])
     assert len(payloads_for(event)) == 1
+
+    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(16)]).games
+    assert len(summary_pages(games)) > 1, "the slate still paginates, just not via payloads_for"
 
 
 # ------------------------------------------------------------------ wire encoding

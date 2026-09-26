@@ -35,7 +35,14 @@ from ..config import Settings, settings as default_settings
 from ..core.events import Event, GoalEvent, Priority, SummaryTick
 from ..nhl.models import Game
 from . import timing
-from .protocol import payloads_for, plain_text, summary_pages, visible_length
+from .protocol import (
+    plain_text,
+    visible_length,
+)
+from .messages import (
+    payloads_for,
+    summary_pages,
+)
 from .transport import BoardTransport
 
 log = logging.getLogger(__name__)
