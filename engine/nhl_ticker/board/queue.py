@@ -11,9 +11,16 @@ single consumer task drains the queue, respecting three rules:
 1. **One message at a time.** The sketch only calls ``server.accept()`` when
    ``cmdDisplayed`` is true, so anything written mid-scroll is dropped on the floor. The
    consumer waits out ``timing.display_seconds`` before sending the next message.
-2. **Priority.** A goal jumps ahead of a queued summary. Ties break by arrival order.
-3. **Summaries coalesce.** A summary is a snapshot of the whole slate, so a newer one
-   strictly supersedes an older one; only the freshest is ever shown.
+2. **Priority.** A goal jumps ahead of anything less urgent. Ties break by arrival order.
+3. **The summary is idle content, not a queued item.** A busy slate does not fit in one
+   message, so it is paginated; the consumer cycles those pages whenever the queue has
+   nothing more urgent to say, and a poll refreshes the page *content* without resetting
+   the rotation.
+
+That third rule exists because the obvious alternative is broken. Queueing the pages and
+coalescing older ones on each poll means that whenever the poll interval is shorter than a
+page hold time -- the normal case during live hockey -- the unshown pages are discarded
+before the consumer ever reaches them, and the board loops on page one forever.
 """
 
 from __future__ import annotations
@@ -26,11 +33,16 @@ from dataclasses import dataclass, field
 
 from ..config import Settings, settings as default_settings
 from ..core.events import Event, Priority, SummaryTick
+from ..nhl.models import Game
 from . import timing
-from .protocol import payloads_for, plain_text, visible_length
+from .protocol import payloads_for, plain_text, summary_pages, visible_length
 from .transport import BoardTransport
 
 log = logging.getLogger(__name__)
+
+#: Floor on how long any message owns the board, so a zeroed hold cannot spin the
+#: consumer through the summary rotation. Only reachable from test settings.
+MIN_HOLD_SECONDS = 0.001
 
 
 @dataclass(order=True)
@@ -68,6 +80,10 @@ class BoardQueue:
         self._on_message = on_message
 
         self._items: list[_QueueItem] = []
+        #: Paginated slate summary, shown when nothing more urgent is queued.
+        self._summary: list[str] = []
+        #: Which page comes next. Deliberately survives a summary refresh.
+        self._summary_index = 0
         self._counter = itertools.count()
         self._wakeup = asyncio.Event()
         self._task: asyncio.Task | None = None
@@ -103,6 +119,8 @@ class BoardQueue:
                 {"kind": type(item.event).__name__, "text": plain_text(item.payload).strip()}
                 for item in self.pending()
             ],
+            "summaryPages": len(self._summary),
+            "summaryPage": (self._summary_index % len(self._summary)) if self._summary else 0,
         }
 
     def set_message_callback(self, callback) -> None:
@@ -112,21 +130,13 @@ class BoardQueue:
     # ------------------------------------------------------------------ producing
 
     def submit(self, event: Event) -> None:
-        """Enqueue an event. Never blocks, never touches the network.
-
-        A summary of a busy slate is too wide for one message, so it arrives as several
-        pages; they are queued together and shown in order.
-        """
-        payloads = payloads_for(event, self._settings)
-
+        """Enqueue an event. Never blocks, never touches the network."""
         if isinstance(event, SummaryTick):
-            # A newer snapshot of the slate makes every page of the old one pointless.
-            before = len(self._items)
-            self._items = [i for i in self._items if not isinstance(i.event, SummaryTick)]
-            if before != len(self._items):
-                log.debug("coalesced %d stale summary page(s)", before - len(self._items))
+            raise TypeError(
+                "the slate summary is idle content, not a queued event -- use set_summary()"
+            )
 
-        for payload in payloads:
+        for payload in payloads_for(event, self._settings):
             self._items.append(
                 _QueueItem(
                     priority=int(event.priority),
@@ -135,6 +145,23 @@ class BoardQueue:
                     payload=payload,
                 )
             )
+        self._wakeup.set()
+
+    def set_summary(self, games: list[Game]) -> None:
+        """Replace the slate summary the board falls back to when it is otherwise idle.
+
+        The rotation index is preserved across refreshes, so a poll arriving mid-cycle does
+        not send the board back to page one -- doing exactly that is what starved every
+        page after the first. The index is only clamped, never reset, which keeps the
+        content current while the cycle keeps advancing.
+
+        An empty slate clears the summary entirely rather than leaving a blank message to
+        write over and over.
+        """
+        self._summary = summary_pages(games, self._settings)
+        self._summary_index = (
+            self._summary_index % len(self._summary) if self._summary else 0
+        )
         self._wakeup.set()
 
     # ------------------------------------------------------------------ consuming
@@ -159,28 +186,50 @@ class BoardQueue:
         self._items.remove(best)
         return best
 
+    def _next_summary_page(self) -> str | None:
+        """The next page of the slate summary, advancing the rotation."""
+        if not self._summary:
+            return None
+        page = self._summary[self._summary_index % len(self._summary)]
+        self._summary_index = (self._summary_index + 1) % len(self._summary)
+        return page
+
     async def _run(self) -> None:
         while True:
             item = self._pop()
-            if item is None:
-                self._wakeup.clear()
-                await self._wakeup.wait()
+            if item is not None:
+                await self.deliver(item)
                 continue
-            await self.deliver(item)
+
+            page = self._next_summary_page()
+            if page is not None:
+                await self._show(page, "SummaryTick", int(Priority.SUMMARY))
+                continue
+
+            # Nothing queued and no slate to show: wait until something arrives.
+            self._wakeup.clear()
+            await self._wakeup.wait()
 
     async def deliver(self, item: _QueueItem) -> BoardMessage:
-        """Send one message and hold the board for as long as it will be busy."""
-        hold = timing.display_seconds(visible_length(item.payload), self._settings)
+        """Send one queued event and hold the board for as long as it will be busy."""
+        return await self._show(item.payload, type(item.event).__name__, item.priority)
+
+    async def _show(self, payload: str, kind: str, priority: int) -> BoardMessage:
+        """Write one message and own the board until it has finished displaying."""
+        hold = max(
+            timing.display_seconds(visible_length(payload), self._settings),
+            MIN_HOLD_SECONDS,
+        )
         message = BoardMessage(
-            payload=item.payload,
-            text=plain_text(item.payload).strip(),
-            priority=item.priority,
-            kind=type(item.event).__name__,
+            payload=payload,
+            text=plain_text(payload).strip(),
+            priority=priority,
+            kind=kind,
             hold_seconds=hold,
             sent_at=time.time(),
         )
 
-        await self._transport.send(item.payload)
+        await self._transport.send(payload)
         self._current = message
         self._busy_until = time.monotonic() + hold
 

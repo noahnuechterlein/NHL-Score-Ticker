@@ -82,23 +82,29 @@ async def test_first_poll_primes_quietly_then_reports_the_next_goal():
     service, _, queue = build(before, after)
 
     await service.poll_once()
-    # Only the always-offered summary; no goal alerts from priming.
-    assert [type(i.event).__name__ for i in queue.pending()] == ["SummaryTick"]
+    # Priming queues no alerts at all; the slate is idle content, not a queued event.
+    assert queue.pending() == []
+    assert queue.describe()["summaryPages"] == 1
 
     await service.poll_once()
     kinds = [type(i.event).__name__ for i in queue.pending()]
     assert "GoalEvent" in kinds
 
 
-async def test_a_summary_is_offered_every_poll_but_never_accumulates():
+async def test_polling_refreshes_the_summary_without_queueing_anything():
+    """Replaced test_a_summary_is_offered_every_poll_but_never_accumulates.
+
+    That test checked the queue held exactly one pending summary. Queueing summaries at
+    all was the bug: each poll discarded the unshown pages of the previous one.
+    """
     board = make_scoreboard(make_game(state="LIVE"))
     service, _, queue = build(board)
 
     for _ in range(5):
         await service.poll_once()
 
-    summaries = [i for i in queue.pending() if type(i.event).__name__ == "SummaryTick"]
-    assert len(summaries) == 1
+    assert queue.pending() == []
+    assert queue.describe()["summaryPages"] >= 1
 
 
 async def test_a_failing_fetch_does_not_raise_out_of_the_service():

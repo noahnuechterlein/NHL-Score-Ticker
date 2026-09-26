@@ -29,8 +29,9 @@ def goal_event(scorer: str = "Ovechkin", team: str = "WSH") -> GoalEvent:
     return GoalEvent(game=game, goal=game.goals[-1])
 
 
-def summary(*, score: int = 0) -> SummaryTick:
-    return SummaryTick(games=make_scoreboard(make_game(home_score=score)).games)
+def slate(*, score: int = 0):
+    """Games for the idle summary. Summaries are set, not submitted."""
+    return make_scoreboard(make_game(home_score=score)).games
 
 
 async def drain(queue: BoardQueue, transport: NullTransport, expected: int) -> None:
@@ -50,15 +51,18 @@ async def drain(queue: BoardQueue, transport: NullTransport, expected: int) -> N
 # ------------------------------------------------------------------ priority
 
 
-async def test_a_goal_pre_empts_a_queued_summary(fast_settings):
+async def test_a_goal_pre_empts_the_idle_summary(fast_settings):
+    """Previously asserted over two queued items; the summary is now idle content.
+
+    The property under test is unchanged: a goal reaches the board before the slate does.
+    """
     transport = NullTransport()
     queue = BoardQueue(transport, fast_settings)
 
-    queue.submit(summary())
+    queue.set_summary(slate())
     queue.submit(goal_event())
-    await drain(queue, transport, 2)
+    await drain(queue, transport, 1)
 
-    assert len(transport.sent) == 2
     assert "Goal!" in transport.sent[0]
 
 
@@ -67,17 +71,15 @@ async def test_priority_order_across_all_event_kinds(fast_settings):
     queue = BoardQueue(transport, fast_settings)
     game = make_scoreboard(make_game(state="FINAL")).games[0]
 
-    queue.submit(summary())
     queue.submit(GameStartEvent(game=game))
     queue.submit(GameEndEvent(game=game))
     queue.submit(goal_event())
-    await drain(queue, transport, 4)
+    await drain(queue, transport, 3)
 
-    # Goal first, then end, then start, then summary.
+    # Goal first, then game end, then game start. Unchanged by the summary rework.
     assert "Goal!" in transport.sent[0]
     assert transport.sent[1].endswith("F")
     assert "underway" in transport.sent[2]
-    assert len(transport.sent) == 4
 
 
 async def test_equal_priority_keeps_arrival_order(fast_settings):
@@ -95,32 +97,45 @@ async def test_equal_priority_keeps_arrival_order(fast_settings):
 # ------------------------------------------------------------------ coalescing
 
 
-async def test_stale_summaries_are_dropped(fast_settings):
+async def test_refreshing_the_summary_replaces_its_content(fast_settings):
+    """Replaced test_stale_summaries_are_dropped.
+
+    That test asserted that re-submitting a summary discarded the pending pages of the
+    previous one -- the very mechanism that starved every page after the first. Setting
+    the summary now swaps the content outright, so only the newest slate can be shown.
+    """
     transport = NullTransport()
     queue = BoardQueue(transport, fast_settings)
 
-    queue.submit(summary(score=0))
-    queue.submit(summary(score=1))
-    queue.submit(summary(score=2))
-    assert len(queue.pending()) == 1
+    queue.set_summary(slate(score=0))
+    queue.set_summary(slate(score=1))
+    queue.set_summary(slate(score=2))
 
     await drain(queue, transport, 1)
-    assert len(transport.sent) == 1
     assert "2-0" in transport.sent[0]
 
 
-async def test_coalescing_does_not_touch_goals(fast_settings):
+async def test_setting_a_summary_never_disturbs_queued_goals(fast_settings):
+    """Replaced test_coalescing_does_not_touch_goals; same guarantee, new mechanism."""
     transport = NullTransport()
     queue = BoardQueue(transport, fast_settings)
 
     queue.submit(goal_event("Pastrnak", "BOS"))
-    queue.submit(summary())
+    queue.set_summary(slate())
     queue.submit(goal_event("Ovechkin", "WSH"))
-    queue.submit(summary())
+    queue.set_summary(slate(score=1))
 
-    assert len(queue.pending()) == 3
-    await drain(queue, transport, 3)
-    assert len(transport.sent) == 3
+    assert len(queue.pending()) == 2
+    await drain(queue, transport, 2)
+    assert "Pastrnak" in transport.sent[0]
+    assert "Ovechkin" in transport.sent[1]
+
+
+async def test_submitting_a_summary_is_rejected(fast_settings):
+    """There must be exactly one way to set the slate, or the old bug can creep back."""
+    queue = BoardQueue(NullTransport(), fast_settings)
+    with pytest.raises(TypeError, match="set_summary"):
+        queue.submit(SummaryTick(games=slate()))
 
 
 # ------------------------------------------------------------------ pacing
@@ -178,14 +193,17 @@ async def test_hold_time_reflects_message_length(fast_settings):
 # ------------------------------------------------------------------ introspection & fan-out
 
 
-async def test_describe_reports_pending_work(fast_settings):
+async def test_describe_reports_pending_work_and_summary_rotation(fast_settings):
     queue = BoardQueue(NullTransport(), fast_settings)
     queue.submit(goal_event())
-    queue.submit(summary())
+    queue.set_summary(slate())
 
     snapshot = queue.describe()
-    assert [p["kind"] for p in snapshot["pending"]] == ["GoalEvent", "SummaryTick"]
+    assert [p["kind"] for p in snapshot["pending"]] == ["GoalEvent"]
     assert "Goal!" in snapshot["pending"][0]["text"]
+    # The UI needs to see where in the slate cycle the board is.
+    assert snapshot["summaryPages"] == 1
+    assert snapshot["summaryPage"] == 0
 
 
 async def test_fan_out_sends_identical_payloads_to_every_transport(fast_settings):

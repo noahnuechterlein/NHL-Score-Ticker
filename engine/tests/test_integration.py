@@ -133,7 +133,7 @@ async def test_priming_poll_emits_no_alerts(instant):
     service, board, _, _, _ = build(instant)
     await run_polls(service, board, 1)
 
-    # The first poll only ever shows the slate summary.
+    # The first poll only ever shows the slate summary, never a goal alert.
     assert all("Goal!" not in message for message in board.sent)
 
 

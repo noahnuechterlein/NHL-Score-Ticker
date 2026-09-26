@@ -19,7 +19,7 @@ import random
 
 from .board.queue import BoardMessage, BoardQueue
 from .config import Settings, settings as default_settings
-from .core.events import Event, GoalEvent, SummaryTick
+from .core.events import Event, GoalEvent
 from .core.serialize import event_to_dict, game_to_dict
 from .core.state import ScoreboardTracker
 from .nhl.client import NHLClient
@@ -130,9 +130,9 @@ class TickerService:
         events = self.tracker.ingest(scoreboard)
         await self.dispatch(events)
 
-        # A summary is always offered; the queue coalesces it away if a newer one lands or
-        # drops it behind anything more urgent.
-        self._queue.submit(SummaryTick(games=list(scoreboard.games)))
+        # Refresh what the board falls back to when idle. This swaps the page content
+        # without resetting the rotation, so the cycle keeps advancing across polls.
+        self._queue.set_summary(list(scoreboard.games))
 
         await self._hub.broadcast(
             {
