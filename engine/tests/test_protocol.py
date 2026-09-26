@@ -262,3 +262,95 @@ def test_payloads_for_expands_summaries_but_not_goals():
 
     event = _goal_event(home_score=1, goals=[make_goal("WSH", "Ovechkin", 0, 1)])
     assert len(payloads_for(event)) == 1
+
+
+# ------------------------------------------------------------------ wire encoding
+
+
+def test_url_keeps_the_characters_the_original_sent_literally():
+    """The 2016 code went through requests, which preserves sub-delims.
+
+    Encoding them ourselves would put `Goal%21` and `F%2FOT` on the wire. We cannot prove
+    how the Yun decodes without the hardware, so match the byte pattern that is known to
+    have worked.
+    """
+    url = encode_url("~ffffe630WSH Goal! O'Reilly (T. Wilson, P. Dubois) F/OT")
+
+    for literal in ("Goal!", "O'Reilly", "(T.", "Wilson,", "F/OT"):
+        assert literal in url, f"{literal!r} should not be percent-encoded"
+    assert "%21" not in url
+    assert "%27" not in url
+    assert "%2F" not in url and "%2f" not in url
+    assert "%28" not in url and "%29" not in url
+
+
+def test_url_still_encodes_what_must_be_encoded():
+    url = encode_url("a b~ff000030c#d?e%f")
+    assert "%20" in url, "spaces must be encoded"
+    assert "%23" in url, "# would start a fragment"
+    assert "%3F" in url, "? would start a query"
+    assert "%25" in url, "% must be escaped"
+    assert "~ff000030" in url, "the colour marker must survive intact"
+
+
+def test_url_targets_the_sketch_text_command():
+    assert encode_url("hi").startswith(f"{settings.board_url_base}/text/")
+
+
+def test_a_literal_slash_is_safe_for_the_sketch_parser():
+    """cmdParse splits on the FIRST '/' only, so later slashes are just text."""
+    url = encode_url("~ffffe630WSH 3-2 BOS F/OT")
+    after_command = url.split("/text/", 1)[1]
+    assert after_command.count("/") == 1
+
+
+# ------------------------------------------------------------------ non-ascii names
+
+
+def test_accented_names_are_folded_rather_than_blanked():
+    """The sketch maps anything outside ASCII 32..126 to a space, so 'Stutzle' beats
+    'St tzle'. Real API data contains both of these names."""
+    event = _goal_event(
+        home_score=1, goals=[make_goal("WSH", "St\u00fctzle", 0, 1)]
+    )
+    assert "Stutzle" in plain_text(payload_for(event))
+
+
+def test_folding_handles_a_range_of_real_hockey_names():
+    for raw, expected in [
+        ("St\u00fctzle", "Stutzle"),
+        ("B\u00e4ck", "Back"),
+        ("H\u00f6glander", "Hoglander"),
+        ("Br\u00e4nnstr\u00f6m", "Brannstrom"),
+        ("Ren\u00e9", "Rene"),
+    ]:
+        event = _goal_event(home_score=1, goals=[make_goal("WSH", raw, 0, 1)])
+        assert expected in plain_text(payload_for(event))
+
+
+def test_folding_applies_to_assists_too():
+    event = _goal_event(
+        home_score=1,
+        goals=[
+            make_goal(
+                "WSH", "Smith", 0, 1,
+                assists=[{"playerId": 1, "name": {"default": "T. St\u00fctzle"}}],
+            )
+        ],
+    )
+    assert "St\u00fctzle" not in plain_text(payload_for(event))
+    assert "Stutzle" in plain_text(payload_for(event))
+
+
+def test_every_board_payload_is_pure_ascii():
+    """Anything the sketch cannot render must never reach the wire."""
+    event = _goal_event(home_score=1, goals=[make_goal("WSH", "\u00d6stlund\u2013\u4e2d", 0, 1)])
+    payload = payload_for(event)
+    assert all(32 <= ord(c) <= 126 for c in payload), repr(payload)
+
+
+def test_unfoldable_characters_do_not_vanish_silently():
+    """A name with nothing ASCII in it should still leave something on the board."""
+    event = _goal_event(home_score=1, goals=[make_goal("WSH", "\u4e2d\u6751", 0, 1)])
+    text = plain_text(payload_for(event))
+    assert "Goal!" in text

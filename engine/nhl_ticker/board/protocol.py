@@ -19,6 +19,7 @@ Two hard limits come out of the firmware:
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from urllib.parse import quote
 
@@ -38,6 +39,21 @@ MARKER_LEN = 9
 #: The original used the same trick with a bare five-space prefix.
 LEAD_IN = "     "
 
+#: Characters left un-escaped in the board URL.
+#:
+#: Python's default safe set is just "/", and passing ``safe="~"`` *replaces* it rather
+#: than adding to it -- which silently percent-encoded ``!``, ``'``, ``(``, ``)``, ``,``
+#: and ``/``, so a goal alert went out as ``Goal%21`` and a final as ``F%2FOT``. The 2016
+#: code reached the same board through ``requests``, which preserves RFC 3986 sub-delims,
+#: so this restores the byte pattern that is known to have worked. Only space, ``%``,
+#: ``#``, ``?`` and non-ASCII are escaped now.
+#:
+#: A literal ``/`` in the text is safe: ``cmdParse`` splits on the first one only.
+URL_SAFE = "~!$&'()*+,;=:@/-._"
+
+#: The sketch replaces anything outside this range with a space (``if (ch<32 || ch>126)``).
+PRINTABLE_MIN, PRINTABLE_MAX = 32, 126
+
 
 @dataclass(frozen=True, slots=True)
 class Segment:
@@ -45,6 +61,24 @@ class Segment:
 
     text: str
     color: str = DEFAULT_TEAM.color
+
+
+def to_board_ascii(text: str) -> str:
+    """Fold text down to characters the board can actually draw.
+
+    The sketch substitutes a space for anything outside ASCII 32..126, so an unfolded
+    "Stutzle" arrives as "St tzle" and loses a letter. Decomposing first and dropping the
+    combining marks keeps the letter: "Stutzle". Real NHL data needs this -- our own
+    fixtures contain Stutzle and Back.
+
+    Anything with no ASCII equivalent at all (CJK, for instance) still degrades to a
+    space, which is what the board would have shown anyway.
+    """
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return "".join(
+        c if PRINTABLE_MIN <= ord(c) <= PRINTABLE_MAX else " " for c in stripped
+    )
 
 
 def marker(color: str, brightness: str) -> str:
@@ -62,7 +96,9 @@ def render(segments: list[Segment], settings: Settings | None = None) -> str:
         if segment.color != current:
             out.append(marker(segment.color, cfg.board_brightness))
             current = segment.color
-        out.append(segment.text)
+        # Folded here rather than at each call site, so nothing unrenderable can reach
+        # the board however a payload was assembled.
+        out.append(to_board_ascii(segment.text))
     return "".join(out)
 
 
@@ -115,9 +151,9 @@ def truncate(payload: str, limit: int = MAX_VISIBLE_CHARS) -> str:
 
 
 def encode_url(payload: str, settings: Settings | None = None) -> str:
-    """Full board URL for a payload. Tilde is unreserved, so it survives quoting."""
+    """Full board URL for a payload. See URL_SAFE for why the safe set is so wide."""
     cfg = settings or default_settings
-    return f"{cfg.board_url_base}/text/{quote(payload, safe='~')}"
+    return f"{cfg.board_url_base}/text/{quote(payload, safe=URL_SAFE)}"
 
 
 # --------------------------------------------------------------------------- formatting
