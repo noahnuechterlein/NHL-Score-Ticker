@@ -139,8 +139,26 @@ def game_end_segments(event: GameEndEvent) -> list[Segment]:
     return [Segment(LEAD_IN), *_score_line(event.game), Segment(f" {suffix}" if suffix else "")]
 
 
+def slate_for_summary(games: list[Game]) -> list[Game]:
+    """The games worth putting on the board right now.
+
+    Once anything has started, upcoming games are dropped: a wall of "7:00  7:00  8:00"
+    is noise next to hockey that is actually happening, and on a busy night those
+    listings are most of the slate, so they push the live games onto later pages. Before
+    puck drop they are the whole point, so then everything shows.
+
+    A game in an UNKNOWN state counts as not started, so an unrecognised state can never
+    suppress the rest of the slate by looking like live hockey.
+    """
+    started = [game for game in games if game.has_started]
+    return started or list(games)
+
+
 def summary_segments(games: list[Game], settings: Settings | None = None) -> list[Segment]:
-    """Every game on the slate, in one scrolling line.
+    """Render the given games as one scrolling line.
+
+    A pure renderer: it shows exactly what it is handed. Which games belong on the board
+    is :func:`slate_for_summary`'s decision, applied by the callers below.
 
     Unstarted games show their start time rather than a 0-0 score, which is what the
     original's printableGameList did.
@@ -180,7 +198,7 @@ def summary_pages(games: list[Game], settings: Settings | None = None) -> list[s
 
     pages: list[str] = []
     current: list[Game] = []
-    for game in games:
+    for game in slate_for_summary(games):
         candidate = current + [game]
         if current and visible_length(render(summary_segments(candidate, cfg), cfg)) > limit:
             pages.append(truncate(render(summary_segments(current, cfg), cfg)))
@@ -211,7 +229,7 @@ def segments_for(event: Event, settings: Settings | None = None) -> list[Segment
         case GameStartEvent():
             return game_start_segments(event)
         case SummaryTick():
-            return summary_segments(event.games, settings)
+            return summary_segments(slate_for_summary(event.games), settings)
     raise TypeError(f"no board formatting for {type(event).__name__}")
 
 

@@ -67,6 +67,15 @@ def build_cases(live_fixture, future_fixture) -> dict[str, object]:
         "summary_finished": payload_for(SummaryTick(games=live_fixture.games), PINNED),
         "summary_pages_scheduled": summary_pages(future_fixture.games, PINNED),
     }
+    # A mixed slate: upcoming games drop off once anything has started.
+    mixed = make_scoreboard(
+        make_game(game_id=1, away="BOS", home="WSH", home_score=2, state="LIVE"),
+        make_game(game_id=2, away="NYR", home="NYI", state="FINAL"),
+        make_game(game_id=3, away="DAL", home="MIN", state="FUT"),
+        make_game(game_id=4, away="WPG", home="COL", state="FUT"),
+    ).games
+    cases["summary_mixed_slate"] = summary_pages(mixed, PINNED)
+
     cases["goal_url"] = encode_url(cases["goal"], PINNED)
     cases["game_end_url"] = encode_url(cases["game_end_ot"], PINNED)
     return cases
@@ -101,4 +110,7 @@ def test_the_snapshot_actually_covers_the_interesting_cases(cases):
     assert "Stutzle" in cases["goal_accented"], "accent folding must be covered"
     assert "F/OT" in cases["game_end_ot"]
     assert len(cases["summary_pages_scheduled"]) > 1, "pagination must be covered"
+    mixed = " ".join(cases["summary_mixed_slate"])
+    assert " vs " not in mixed, "upcoming games must be dropped once play has started"
+    assert "WSH" in mixed and "NYI" in mixed
     assert "%20" in cases["goal_url"], "url encoding must be covered"

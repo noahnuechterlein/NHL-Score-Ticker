@@ -150,15 +150,25 @@ def test_game_start_payload():
     assert "WSH vs BOS underway" in plain_text(payload_for(GameStartEvent(game=game)))
 
 
-def test_summary_shows_matchups_for_unstarted_games_and_scores_for_live_ones():
+def test_summary_shows_matchups_before_anything_starts():
+    """Split from test_summary_shows_matchups_for_unstarted_games_and_scores_for_live_ones.
+
+    That test put one FUT and one LIVE game on the same slate and expected both. The
+    board now drops upcoming games once play begins -- see tests/test_slate_selection.py
+    -- so the two halves are asserted separately.
+    """
     games = make_scoreboard(
         make_game(game_id=1, state="FUT"),
+        make_game(game_id=2, away="NYR", home="NYI", state="FUT"),
+    ).games
+    assert "WSH vs BOS" in plain_text(payload_for(SummaryTick(games=games)))
+
+
+def test_summary_shows_scores_for_games_in_progress():
+    games = make_scoreboard(
         make_game(game_id=2, away="NYR", home="NYI", away_score=2, home_score=1, state="LIVE"),
     ).games
-    text = plain_text(payload_for(SummaryTick(games=games)))
-
-    assert "WSH vs BOS" in text
-    assert "NYI 1-2 NYR" in text
+    assert "NYI 1-2 NYR" in plain_text(payload_for(SummaryTick(games=games)))
 
 
 def test_summary_of_a_real_recorded_slate(live_fixture):
