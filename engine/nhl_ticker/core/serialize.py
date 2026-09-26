@@ -10,7 +10,6 @@ from __future__ import annotations
 from ..board.protocol import payload_for, plain_text
 from .events import Event, GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 from .league import team
-from .state import ScoreboardTracker
 from ..nhl.models import Game
 
 
@@ -74,9 +73,7 @@ def event_to_dict(event: Event) -> dict:
         case GameStartEvent() | GameEndEvent():
             base |= {"gameId": event.game.id}
         case SummaryTick():
-            base |= {"gameCount": len(event.games)}
+            # payload_for gives only the first page of a paginated slate; say so rather
+            # than implying the single payload above is the whole summary.
+            base |= {"gameCount": len(event.games), "payloadIsFirstPageOnly": True}
     return base
-
-
-def tracker_to_dict(tracker: ScoreboardTracker) -> dict:
-    return {"trackedGames": sorted(tracker.tracked_ids)}

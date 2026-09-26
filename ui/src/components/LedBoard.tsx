@@ -20,12 +20,19 @@ const PIXEL_GAP = 2;
 
 interface Props {
   payload: string;
+  /** Changes on every board write, including a replay of identical text. */
+  messageId?: number;
   /** Milliseconds per frame; matches the engine's board_frame_ms. */
   frameMs?: number;
   paused?: boolean;
 }
 
-export default function LedBoard({ payload, frameMs = 33, paused = false }: Props) {
+export default function LedBoard({
+  payload,
+  messageId = 0,
+  frameMs = 33,
+  paused = false,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [offset, setOffset] = useState(0);
 
@@ -33,8 +40,9 @@ export default function LedBoard({ payload, frameMs = 33, paused = false }: Prop
   const scrolls = chars.length > VISIBLE_CHARS;
   const cycleColumns = (chars.length + SCROLL_GAP) * CELL_COLS;
 
-  // Restart the scroll whenever a new message arrives.
-  useEffect(() => setOffset(0), [payload]);
+  // Restart the scroll on every write. Keying this on the payload text alone meant a
+  // replay of the same message was a no-op, because the dependency never changed.
+  useEffect(() => setOffset(0), [payload, messageId]);
 
   useEffect(() => {
     if (!scrolls || paused) return;
@@ -45,21 +53,28 @@ export default function LedBoard({ payload, frameMs = 33, paused = false }: Prop
     return () => window.clearInterval(id);
   }, [scrolls, paused, frameMs, cycleColumns]);
 
+  const pitch = PIXEL_SIZE + PIXEL_GAP;
+  const width = VISIBLE_CHARS * CELL_COLS * pitch;
+  const height = ROWS * pitch;
+
+  // Sizing is its own effect: assigning canvas.width resets the whole canvas, and doing
+  // that inside the draw effect meant reallocating it on every frame, 30 times a second.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const pitch = PIXEL_SIZE + PIXEL_GAP;
-    const width = VISIBLE_CHARS * CELL_COLS * pitch;
-    const height = ROWS * pitch;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    canvas.getContext("2d")?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, [width, height]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
     ctx.fillStyle = "#09090b";
     ctx.fillRect(0, 0, width, height);

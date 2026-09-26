@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from conftest import make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board import timing
@@ -354,3 +356,50 @@ def test_unfoldable_characters_do_not_vanish_silently():
     event = _goal_event(home_score=1, goals=[make_goal("WSH", "\u4e2d\u6751", 0, 1)])
     text = plain_text(payload_for(event))
     assert "Goal!" in text
+
+
+# ------------------------------------------------------------------ start times
+
+
+def test_unstarted_games_show_their_start_time():
+    """The original's printableGameList did this; the rewrite had dropped it."""
+    game = make_scoreboard(make_game(state="FUT")).games[0]
+    text = plain_text(payload_for(SummaryTick(games=[game])))
+    assert "WSH vs BOS" in text
+    # 23:00 UTC in whatever zone the host runs in, formatted h:mm.
+    assert re.search(r"WSH vs BOS \d{1,2}:\d{2}", text), text
+
+
+def test_started_games_show_the_score_not_a_start_time():
+    game = make_scoreboard(make_game(state="LIVE", home_score=2, away_score=1)).games[0]
+    text = plain_text(payload_for(SummaryTick(games=[game])))
+    assert "WSH 2-1 BOS" in text
+    assert " vs " not in text
+
+
+def test_a_missing_or_malformed_start_time_is_omitted_not_fatal():
+    for stamp in ("", "not-a-timestamp"):
+        raw = make_game(state="FUT")
+        raw["startTimeUTC"] = stamp
+        game = make_scoreboard(raw).games[0]
+        text = plain_text(payload_for(SummaryTick(games=[game])))
+        assert "WSH vs BOS" in text
+
+
+def test_start_times_are_converted_to_local_time():
+    from datetime import datetime
+
+    raw = make_game(state="FUT")
+    raw["startTimeUTC"] = "2026-10-08T23:00:00Z"
+    game = make_scoreboard(raw).games[0]
+    expected_hour = (
+        datetime.fromisoformat("2026-10-08T23:00:00+00:00").astimezone().hour % 12
+    ) or 12
+    assert f"{expected_hour}:00" in plain_text(payload_for(SummaryTick(games=[game])))
+
+
+def test_start_times_widen_pages_but_pagination_still_holds():
+    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(16)]).games
+    pages = summary_pages(games)
+    assert all(visible_length(p) <= MAX_VISIBLE_CHARS for p in pages)
+    assert sum(plain_text(p).count("WSH vs BOS") for p in pages) == 16

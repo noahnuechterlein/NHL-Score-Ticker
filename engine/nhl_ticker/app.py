@@ -74,13 +74,14 @@ app.add_middleware(
 )
 
 
-def _service(app: FastAPI) -> TickerService:
+def _service() -> TickerService:
+    """The running service. Held on app.state so the lifespan owns its lifetime."""
     return app.state.service
 
 
 @app.get("/api/state")
 async def get_state():
-    return _service(app).snapshot()
+    return _service().snapshot()
 
 
 @app.get("/api/teams")
@@ -100,7 +101,7 @@ async def get_teams():
 @app.post("/api/poll")
 async def force_poll():
     """Skip the rest of the current interval and refetch now."""
-    _service(app).request_poll()
+    _service().request_poll()
     return {"ok": True}
 
 
@@ -108,21 +109,21 @@ async def force_poll():
 async def fake_goal(gameId: int | None = None, team: str | None = None):
     """Inject a synthetic goal so the board chain can be tested with no live hockey."""
     try:
-        return await _service(app).fake_goal(gameId, team)
+        return await _service().fake_goal(gameId, team)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/clear")
 async def clear_board():
-    await _service(app).clear_board()
+    await _service().clear_board()
     return {"ok": True}
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    service = _service(app)
+    service = _service()
     await service.hub.connect(websocket)
     await websocket.send_json({"type": "snapshot", **service.snapshot()})
     try:
@@ -137,7 +138,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/healthz")
 async def healthz():
-    service = _service(app)
+    service = _service()
     return JSONResponse(
         {"ok": service.last_error is None, "lastError": service.last_error},
         status_code=200 if service.last_error is None else 503,

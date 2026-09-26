@@ -58,6 +58,15 @@ export default function QueueInspector({ queue }: { queue: QueueState }) {
         )}
       </div>
 
+      {queue.summaryPages > 1 && (
+        <div className="flex items-center justify-between rounded border border-zinc-800/70 bg-zinc-900/30 px-2 py-1.5">
+          <span className="text-[11px] text-zinc-500">Slate cycle</span>
+          <span className="font-mono text-[11px] text-zinc-400">
+            page {queue.summaryPage + 1} of {queue.summaryPages}
+          </span>
+        </div>
+      )}
+
       <div className="space-y-1">
         <div className="flex items-baseline justify-between">
           <span className="text-[11px] uppercase tracking-wider text-zinc-600">Pending</span>

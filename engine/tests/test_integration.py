@@ -83,7 +83,7 @@ def a_game_in_three_periods() -> list[Scoreboard]:
     ]
 
 
-async def run_polls(service: TickerService, transport: NullTransport, count: int) -> None:
+async def run_polls(service: TickerService, count: int) -> None:
     await service.queue.start()
     for _ in range(count):
         await service.poll_once()
@@ -115,7 +115,7 @@ async def test_a_whole_game_produces_the_right_board_messages(instant):
     service, board, hub, socket, _ = build(instant)
     await hub.connect(socket)
 
-    await run_polls(service, board, 4)
+    await run_polls(service, 4)
 
     texts = [t for t in board.sent]
     joined = " | ".join(texts)
@@ -131,7 +131,7 @@ async def test_a_whole_game_produces_the_right_board_messages(instant):
 
 async def test_priming_poll_emits_no_alerts(instant):
     service, board, _, _, _ = build(instant)
-    await run_polls(service, board, 1)
+    await run_polls(service, 1)
 
     # The first poll only ever shows the slate summary, never a goal alert.
     assert all("Goal!" not in message for message in board.sent)
@@ -139,7 +139,7 @@ async def test_priming_poll_emits_no_alerts(instant):
 
 async def test_the_horn_fires_once_per_goal_for_the_scoring_team(instant):
     service, board, _, _, player = build(instant)
-    await run_polls(service, board, 4)
+    await run_polls(service, 4)
 
     assert [p.name for p in player.started] == [
         "boston.mp3",
@@ -152,7 +152,7 @@ async def test_the_ui_sees_every_goal_and_the_payloads(instant):
     service, board, hub, socket, _ = build(instant)
     await hub.connect(socket)
 
-    await run_polls(service, board, 4)
+    await run_polls(service, 4)
 
     goals = [m for m in socket.of_type("event") if m["kind"] == "GoalEvent"]
     assert [g["scorer"] for g in goals] == ["Pastrnak", "Ovechkin", "Strome"]
@@ -176,7 +176,7 @@ async def test_the_emulator_and_the_board_receive_identical_bytes(instant):
     )
     queue.set_message_callback(service.on_board_message)
 
-    await run_polls(service, hardware, 4)
+    await run_polls(service, 4)
 
     assert hardware.sent == emulator.sent
     assert len(hardware.sent) > 0

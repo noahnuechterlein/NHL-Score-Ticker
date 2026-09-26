@@ -90,7 +90,7 @@ export default function App() {
         </div>
 
         <div className="overflow-x-auto">
-          <LedBoard payload={payload} />
+          <LedBoard payload={payload} messageId={ticker.board?.sentAt} />
         </div>
 
         <div className="space-y-1.5">

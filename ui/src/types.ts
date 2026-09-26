@@ -37,6 +37,9 @@ export interface QueueState {
   busySecondsRemaining: number;
   current: { text: string; kind: string; holdSeconds: number } | null;
   pending: QueueItem[];
+  /** How many pages the slate summary splits into, and which one comes next. */
+  summaryPages: number;
+  summaryPage: number;
 }
 
 export interface TickerEvent {

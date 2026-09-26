@@ -11,6 +11,9 @@ export interface BoardState {
   text: string;
   kind: string;
   holdSeconds: number;
+  /** Identity of this particular write. Replaying the same text must still restart the
+   *  scroll, so the emulator keys off this rather than off the payload string. */
+  sentAt: number;
 }
 
 const EMPTY_QUEUE: QueueState = {
@@ -18,6 +21,8 @@ const EMPTY_QUEUE: QueueState = {
   busySecondsRemaining: 0,
   current: null,
   pending: [],
+  summaryPages: 0,
+  summaryPage: 0,
 };
 
 export function useTicker() {
@@ -72,6 +77,8 @@ export function useTicker() {
               busySecondsRemaining: message.busySecondsRemaining,
               current: message.current,
               pending: message.pending,
+              summaryPages: message.summaryPages,
+              summaryPage: message.summaryPage,
             });
             break;
           case "boardMessage":
@@ -80,6 +87,7 @@ export function useTicker() {
               text: message.text,
               kind: message.kind,
               holdSeconds: message.holdSeconds,
+              sentAt: message.sentAt,
             });
             break;
           case "boardClear":
@@ -130,6 +138,10 @@ export function useTicker() {
       post(`/api/fake-goal${team ? `?team=${encodeURIComponent(team)}` : ""}`),
     forcePoll: () => post("/api/poll"),
     clearBoard: () => post("/api/clear"),
-    replayBoard: () => board && setBoard({ ...board }),
+    // A fresh sentAt is what makes the emulator restart; copying the object alone left
+    // the payload string unchanged, so the scroll never reset and Replay did nothing.
+    replayBoard: (): void => {
+      setBoard((current) => (current ? { ...current, sentAt: Date.now() / 1000 } : current));
+    },
   };
 }

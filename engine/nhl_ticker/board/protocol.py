@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import quote
 
 from ..config import Settings, settings as default_settings
@@ -194,6 +195,23 @@ def _status_suffix(game: Game) -> str:
     return ""
 
 
+def start_time_label(game: Game) -> str:
+    """Local start time for a game that has not begun, e.g. "7:00".
+
+    Converted to the engine host's local zone -- the board sits in the same room as the
+    host. Rendered without a meridiem to stay narrow, as the original did; the NHL does
+    not schedule games at ambiguous hours.
+    """
+    if not game.start_time_utc:
+        return ""
+    try:
+        moment = datetime.fromisoformat(game.start_time_utc.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    local = moment.astimezone()
+    return f"{(local.hour % 12) or 12}:{local.minute:02d}"
+
+
 def _strength_tag(goal) -> str:
     if goal.is_empty_net:
         return " EN"
@@ -253,6 +271,9 @@ def summary_segments(games: list[Game]) -> list[Segment]:
                     _team_segment(game.away_team.abbrev),
                 ]
             )
+            start = start_time_label(game)
+            if start:
+                segments.append(Segment(f" {start}"))
         else:
             segments.extend(_score_line(game))
             suffix = _status_suffix(game)
