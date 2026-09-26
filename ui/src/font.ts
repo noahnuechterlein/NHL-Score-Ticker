@@ -4,16 +4,31 @@
 //
 // Indexed as FONT[charCode - 32]. Each entry is 5 column bytes; the sketch reserves a
 // 6th blank column for inter-character spacing (COLS = 6, and it only draws when
-// `colcur < COLS - 1`). Within a column byte the sketch masks rows with
-// rowMask[7] = {0x40,0x20,0x10,0x08,0x04,0x02,0x01}, so bit 0x40 is the top row and
-// 0x01 the bottom.
+// `colcur < COLS - 1`).
+//
+// Within a column byte, 0x01 is the TOP row and 0x40 the bottom -- the usual 5x7
+// convention of LSB-at-top. See ROW_MASK below for why.
 
 export const GLYPH_COLS = 5;
 export const CELL_COLS = 6;
 export const ROWS = 7;
 
-/** Row masks, top row first. Mirrors rowMask[] in the sketch. */
+/**
+ * rowMask[] exactly as the sketch declares it. **Index 0 is the BOTTOM row.**
+ *
+ * The sketch walks rows backwards -- `for (int row = ROWS-1; row >= 0; row--)` -- so the
+ * first scanline it clocks out to the strip uses rowMask[6] = 0x01 and the last uses
+ * rowMask[0] = 0x40. The first row out is the physical top, which makes 0x01 the top of
+ * the glyph.
+ *
+ * Kept in the sketch's own order so this still reads as a line-for-line port. To draw,
+ * use ROW_MASK_TOP_DOWN; indexing this one with a visual row renders upside down, which
+ * is exactly the bug the emulator originally shipped with.
+ */
 export const ROW_MASK = [0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01] as const;
+
+/** The same masks in scanline order: index 0 is the top row. Use this when drawing. */
+export const ROW_MASK_TOP_DOWN: readonly number[] = [...ROW_MASK].reverse();
 
 export const FIRST_CHAR_CODE = 32;
 

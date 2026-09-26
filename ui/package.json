@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "npm run check:font && tsc -b && vite build",
+    "preview": "vite preview",
+    "check:font": "node scripts/check-font.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

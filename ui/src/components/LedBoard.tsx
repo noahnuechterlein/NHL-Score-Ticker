@@ -6,7 +6,7 @@
 // the 22-character window do not scroll at all, exactly as on the hardware.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CELL_COLS, GLYPH_COLS, ROW_MASK, ROWS, glyphFor } from "../font";
+import { CELL_COLS, GLYPH_COLS, ROW_MASK_TOP_DOWN, ROWS, glyphFor } from "../font";
 import { parsePayload, type BoardChar } from "../payload";
 
 /** CHARS in the sketch: how many character cells are physically on the board. */
@@ -100,7 +100,7 @@ export default function LedBoard({
         const lit =
           cell !== undefined &&
           pixelColumn < CELL_COLS - 1 &&
-          (glyphFor(cell.ch)[pixelColumn] & ROW_MASK[row]) !== 0;
+          (glyphFor(cell.ch)[pixelColumn] & ROW_MASK_TOP_DOWN[row]) !== 0;
 
         if (lit) {
           const { r, g, b } = cell!;

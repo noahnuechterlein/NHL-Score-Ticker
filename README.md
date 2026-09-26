@@ -48,6 +48,8 @@ ui/src/
   font.ts       font bitmap extracted verbatim from the firmware
   payload.ts    payload parser, mirroring ledText::parseText
   components/LedBoard.tsx   the emulator
+ui/scripts/
+  check-font.ts guards glyph orientation; runs as part of `npm run build`
 deploy/         systemd unit for the board host
 ```
 
