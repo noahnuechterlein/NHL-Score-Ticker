@@ -193,6 +193,9 @@ class TickerService:
             "queue": self._queue.describe(),
             "pollSeconds": self.poll_interval(self.scoreboard),
             "boardEnabled": self._settings.board_enabled,
+            # The emulator must scroll at the board's rate, not its own guess, or the two
+            # drift apart as soon as board_frame_ms is calibrated against real hardware.
+            "boardFrameMs": self._settings.board_frame_ms,
             "boardOnline": self._queue.hardware_online,
             "hornEnabled": self._settings.horn_enabled,
             "lastError": self.last_error,

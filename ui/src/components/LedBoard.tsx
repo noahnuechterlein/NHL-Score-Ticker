@@ -22,7 +22,8 @@ interface Props {
   payload: string;
   /** Changes on every board write, including a replay of identical text. */
   messageId?: number;
-  /** Milliseconds per frame; matches the engine's board_frame_ms. */
+  /** Milliseconds per frame. Comes from the engine's board_frame_ms so the emulator and
+   *  the hardware stay in step once that is calibrated. */
   frameMs?: number;
   paused?: boolean;
 }
@@ -40,18 +41,37 @@ export default function LedBoard({
   const scrolls = chars.length > VISIBLE_CHARS;
   const cycleColumns = (chars.length + SCROLL_GAP) * CELL_COLS;
 
-  // Restart the scroll on every write. Keying this on the payload text alone meant a
-  // replay of the same message was a no-op, because the dependency never changed.
-  useEffect(() => setOffset(0), [payload, messageId]);
-
+  // Derive the scroll position from elapsed wall-clock time rather than counting timer
+  // ticks.
+  //
+  // Counting ticks loses time whenever a frame runs long -- a canvas redraw at 30fps
+  // easily costs more than the 33ms budget -- and the loss accumulates. Meanwhile the
+  // engine holds the board for a fixed number of *seconds*, so a slow emulator got its
+  // message swapped out before the text had finished scrolling. Only about 15% slippage
+  // is enough to truncate it.
+  //
+  // Reading the clock makes dropped frames irrelevant: the scroll may stutter, but it
+  // always sits where it should for the time elapsed, and finishes when the board does.
+  // (requestAnimationFrame pauses in a hidden tab, which is fine -- on return, elapsed
+  // time jumps the scroll straight to the right position.)
+  //
+  // Restarting keys on messageId as well as the text, so replaying an identical message
+  // still starts the scroll over.
   useEffect(() => {
-    if (!scrolls || paused) return;
-    const id = window.setInterval(
-      () => setOffset((current) => (current + 1) % Math.max(1, cycleColumns)),
-      frameMs,
-    );
-    return () => window.clearInterval(id);
-  }, [scrolls, paused, frameMs, cycleColumns]);
+    if (!scrolls || paused) {
+      setOffset(0);
+      return;
+    }
+    const columns = Math.max(1, cycleColumns);
+    const startedAt = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      setOffset(Math.floor((now - startedAt) / frameMs) % columns);
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [scrolls, paused, frameMs, cycleColumns, payload, messageId]);
 
   const pitch = PIXEL_SIZE + PIXEL_GAP;
   const width = VISIBLE_CHARS * CELL_COLS * pitch;

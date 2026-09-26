@@ -65,6 +65,8 @@ export interface Snapshot {
   queue: QueueState;
   pollSeconds: number;
   boardEnabled: boolean;
+  /** Milliseconds per scroll frame on the board; the emulator matches it. */
+  boardFrameMs: number;
   /** null when no physical board is configured. */
   boardOnline: boolean | null;
   hornEnabled: boolean;

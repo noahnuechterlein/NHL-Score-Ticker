@@ -34,6 +34,7 @@ export function useTicker() {
   const [events, setEvents] = useState<TickerEvent[]>([]);
   const [pollSeconds, setPollSeconds] = useState(0);
   const [boardEnabled, setBoardEnabled] = useState(false);
+  const [boardFrameMs, setBoardFrameMs] = useState(33);
   const [boardOnline, setBoardOnline] = useState<boolean | null>(null);
   const [hornEnabled, setHornEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function useTicker() {
             setQueue(message.queue);
             setPollSeconds(message.pollSeconds);
             setBoardEnabled(message.boardEnabled);
+            setBoardFrameMs(message.boardFrameMs);
             setBoardOnline(message.boardOnline);
             setHornEnabled(message.hornEnabled);
             setError(message.lastError);
@@ -133,6 +135,7 @@ export function useTicker() {
     events,
     pollSeconds,
     boardEnabled,
+    boardFrameMs,
     boardOnline,
     hornEnabled,
     error,
