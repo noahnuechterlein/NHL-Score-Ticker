@@ -11,6 +11,7 @@ from nhl_ticker.config import Settings
 from nhl_ticker.nhl.models import Scoreboard
 from nhl_ticker.runner import TickerService
 from nhl_ticker.sinks.broadcast import BroadcastHub
+from nhl_ticker.sinks.horn import HornSink, NullPlayer
 
 
 class StubClient:
@@ -33,14 +34,22 @@ def fast_settings() -> Settings:
     )
 
 
-def build(*scoreboards: Scoreboard, settings: Settings | None = None):
+def build(*scoreboards: Scoreboard, settings: Settings | None = None, horn=None):
     cfg = settings or Settings(
         board_frame_ms=0.0, board_min_dwell_seconds=0.0, board_static_hold_seconds=0.0
     )
     transport = NullTransport()
     queue = BoardQueue(transport, cfg)
-    service = TickerService(StubClient(*scoreboards), queue, BroadcastHub(), cfg)
+    service = TickerService(StubClient(*scoreboards), queue, BroadcastHub(), cfg, horn=horn)
     return service, transport, queue
+
+
+class RecordingSocket:
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    async def send_json(self, message: dict) -> None:
+        self.messages.append(message)
 
 
 # ------------------------------------------------------------------ cadence
@@ -191,7 +200,7 @@ async def test_fake_goal_attaches_to_a_game_the_named_team_actually_plays_in():
     await service.poll_once()
 
     for _ in range(10):
-        event = service.fake_goal(team_abbrev="BOS")
+        event = await service.fake_goal(team_abbrev="BOS")
         assert event["gameId"] == 1
         assert "BOS Goal!" in event["text"]
 
@@ -201,7 +210,7 @@ async def test_fake_goal_rejects_a_team_that_is_not_on_the_slate():
     await service.poll_once()
 
     with pytest.raises(LookupError, match="TOR"):
-        service.fake_goal(team_abbrev="TOR")
+        await service.fake_goal(team_abbrev="TOR")
 
 
 async def test_fake_goal_rejects_a_team_not_in_the_requested_game():
@@ -213,7 +222,7 @@ async def test_fake_goal_rejects_a_team_not_in_the_requested_game():
     await service.poll_once()
 
     with pytest.raises(LookupError):
-        service.fake_goal(game_id=2, team_abbrev="BOS")
+        await service.fake_goal(game_id=2, team_abbrev="BOS")
 
 
 async def test_fake_goal_bumps_the_scoring_teams_score():
@@ -223,7 +232,7 @@ async def test_fake_goal_bumps_the_scoring_teams_score():
     service, _, _ = build(board)
     await service.poll_once()
 
-    event = service.fake_goal(team_abbrev="BOS")
+    event = await service.fake_goal(team_abbrev="BOS")
     assert "WSH 3-3 BOS" in event["text"]
 
 
@@ -232,7 +241,48 @@ async def test_fake_goal_errors_clearly_on_an_empty_slate():
     await service.poll_once()
 
     with pytest.raises(LookupError):
-        service.fake_goal()
+        await service.fake_goal()
+
+
+async def test_fake_goal_fires_the_horn():
+    """The button exists to exercise the whole chain; it was skipping the horn entirely."""
+    player = NullPlayer()
+    cfg = Settings(
+        board_frame_ms=0.0, board_min_dwell_seconds=0.0,
+        board_static_hold_seconds=0.0, horn_max_seconds=0.01,
+    )
+    service, _, _ = build(
+        make_scoreboard(make_game(away="BOS", home="WSH", state="LIVE")),
+        settings=cfg,
+        horn=HornSink(cfg, player),
+    )
+    await service.poll_once()
+
+    await service.fake_goal(team_abbrev="BOS")
+    assert [p.name for p in player.started] == ["boston.mp3"]
+
+
+async def test_fake_goal_reaches_the_ui_event_feed():
+    """It was queued to the board but never broadcast, so the Events list stayed empty."""
+    service, _, _ = build(make_scoreboard(make_game(away="BOS", home="WSH", state="LIVE")))
+    socket = RecordingSocket()
+    await service.hub.connect(socket)
+    await service.poll_once()
+
+    await service.fake_goal(team_abbrev="BOS")
+
+    goals = [m for m in socket.messages if m.get("type") == "event" and m["kind"] == "GoalEvent"]
+    assert len(goals) == 1
+    assert goals[0]["team"] == "BOS"
+
+
+async def test_fake_goal_still_reaches_the_board():
+    service, transport, queue = build(
+        make_scoreboard(make_game(away="BOS", home="WSH", state="LIVE"))
+    )
+    await service.poll_once()
+    await service.fake_goal(team_abbrev="BOS")
+    assert any(type(i.event).__name__ == "GoalEvent" for i in queue.pending())
 
 
 async def test_fake_goal_does_not_corrupt_the_real_scoreboard():
@@ -241,7 +291,7 @@ async def test_fake_goal_does_not_corrupt_the_real_scoreboard():
     service, _, _ = build(board)
     await service.poll_once()
 
-    service.fake_goal(team_abbrev="BOS")
+    await service.fake_goal(team_abbrev="BOS")
 
     assert service.scoreboard.games[0].away_team.score == 0
     assert await service.poll_once() is not None

@@ -100,3 +100,27 @@ def test_stop_is_safe_before_anything_has_played():
     sink, player = build()
     sink.stop()
     assert player.stops == 1
+
+
+def test_an_expired_timer_cannot_stop_a_later_horn():
+    """The race: timer N fires, blocks on the lock while play() N+1 runs, then stops the
+    *new* horn once the lock frees. cancel() is a no-op on an already-fired timer."""
+    sink, player = build()
+
+    sink.play("BOS")
+    stale_stop = sink._stop_generation_callback()  # what timer 1 would run
+    sink.play("WSH")
+    assert player.started[-1].name == "washington.mp3"
+
+    stale_stop()  # timer 1 finally gets the lock
+    assert player.stops == 0, "a stale timer must not cut off the current horn"
+
+    sink.stop()
+    assert player.stops == 1
+
+
+def test_the_current_timer_still_stops_its_own_horn():
+    sink, player = build()
+    sink.play("BOS")
+    sink._stop_generation_callback()()
+    assert player.stops == 1

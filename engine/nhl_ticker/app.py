@@ -108,7 +108,7 @@ async def force_poll():
 async def fake_goal(gameId: int | None = None, team: str | None = None):
     """Inject a synthetic goal so the board chain can be tested with no live hockey."""
     try:
-        return _service(app).fake_goal(gameId, team)
+        return await _service(app).fake_goal(gameId, team)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

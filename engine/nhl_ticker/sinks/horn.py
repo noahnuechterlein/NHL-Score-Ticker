@@ -98,6 +98,10 @@ class HornSink:
         self._player = player if player is not None else default_player()
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
+        #: Bumped on every play/stop. A timer only acts on the horn it was created for:
+        #: an already-fired timer cannot be cancelled, so without this it would block on
+        #: the lock and then cut off whichever horn started next.
+        self._generation = 0
 
     def play(self, abbrev: str) -> bool:
         """Start the horn for a team. Returns False if there was nothing to play."""
@@ -111,13 +115,17 @@ class HornSink:
 
         with self._lock:
             self._cancel_timer()
+            self._generation += 1
+            generation = self._generation
             try:
                 self._player.start(path)
             except Exception as exc:
                 log.warning("horn playback failed for %s: %s", abbrev, exc)
                 return False
 
-            self._timer = threading.Timer(self._settings.horn_max_seconds, self.stop)
+            self._timer = threading.Timer(
+                self._settings.horn_max_seconds, self._stop_generation, args=(generation,)
+            )
             self._timer.daemon = True
             self._timer.start()
 
@@ -125,9 +133,26 @@ class HornSink:
         return True
 
     def stop(self) -> None:
+        """Stop whatever is playing now."""
         with self._lock:
             self._cancel_timer()
+            self._generation += 1
             self._player.stop()
+
+    def _stop_generation(self, generation: int) -> None:
+        """Stop the horn, but only if it is still the one this timer was set for."""
+        with self._lock:
+            if generation != self._generation:
+                log.debug("ignoring expired horn timer for generation %d", generation)
+                return
+            self._cancel_timer()
+            self._generation += 1
+            self._player.stop()
+
+    def _stop_generation_callback(self):
+        """The callback the currently-armed timer will run. Exposed for tests."""
+        generation = self._generation
+        return lambda: self._stop_generation(generation)
 
     def _cancel_timer(self) -> None:
         if self._timer is not None:

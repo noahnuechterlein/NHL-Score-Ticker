@@ -223,11 +223,15 @@ class TickerService:
 
     # ------------------------------------------------------------------ test injection
 
-    def fake_goal(self, game_id: int | None = None, team_abbrev: str | None = None) -> dict:
+    async def fake_goal(
+        self, game_id: int | None = None, team_abbrev: str | None = None
+    ) -> dict:
         """Synthesise a goal so the full chain can be exercised off-season.
 
-        Uses a real game off the current slate when there is one, so the resulting board
-        message is shaped exactly like a live alert.
+        Uses a real game off the current slate, so the resulting board message is shaped
+        exactly like a live alert. Goes through ``dispatch`` rather than straight to the
+        queue: the point of the control is to exercise *every* sink, and submitting
+        directly skipped both the horn and the UI event feed.
         """
         game = self._pick_game(game_id, team_abbrev)
         if game is None:
@@ -257,7 +261,7 @@ class TickerService:
         bumped.away_team.score = away_score
 
         event = GoalEvent(game=bumped, goal=goal)
-        self._queue.submit(event)
+        await self.dispatch([event])
         return event_to_dict(event)
 
     def _pick_game(self, game_id: int | None, team_abbrev: str | None = None) -> Game | None:
