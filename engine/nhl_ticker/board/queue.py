@@ -105,6 +105,10 @@ class BoardQueue:
             ],
         }
 
+    def set_message_callback(self, callback) -> None:
+        """Register the async callback fired for each message that reaches the board."""
+        self._on_message = callback
+
     # ------------------------------------------------------------------ producing
 
     def submit(self, event: Event) -> None:
