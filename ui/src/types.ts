@@ -65,6 +65,8 @@ export interface Snapshot {
   queue: QueueState;
   pollSeconds: number;
   boardEnabled: boolean;
+  /** null when no physical board is configured. */
+  boardOnline: boolean | null;
   hornEnabled: boolean;
   lastError: string | null;
 }

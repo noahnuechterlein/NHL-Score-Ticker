@@ -9,7 +9,7 @@ from conftest import make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board import timing
 from nhl_ticker.board.queue import BoardQueue
-from nhl_ticker.board.transport import FanOutTransport, NullTransport
+from nhl_ticker.board.transport import FanOutTransport, HttpBoardTransport, NullTransport
 from nhl_ticker.config import Settings
 from nhl_ticker.core.events import GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 
@@ -233,3 +233,44 @@ async def test_on_message_callback_fires_with_the_sent_payload(fast_settings):
     assert len(seen) == 1
     assert seen[0].kind == "GoalEvent"
     assert "Goal!" in seen[0].text
+
+
+# ------------------------------------------------------------------ board health
+
+
+class FailingTransport(NullTransport):
+    """A board that is plugged in but not answering."""
+
+    is_hardware = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.online = False
+
+    async def send(self, payload: str) -> bool:
+        return False
+
+
+async def test_an_unreachable_board_is_not_masked_by_the_emulator(fast_settings):
+    """FanOut used to return 'any succeeded', so the always-succeeding emulator made a
+    dead board look like a healthy write."""
+    fan = FanOutTransport(FailingTransport(), NullTransport())
+    assert await fan.send("~ffffe630hi") is False
+
+
+async def test_a_healthy_board_reports_success(fast_settings):
+    fan = FanOutTransport(NullTransport(), NullTransport())
+    assert await fan.send("~ffffe630hi") is True
+
+
+async def test_queue_exposes_hardware_reachability(fast_settings):
+    queue = BoardQueue(FanOutTransport(FailingTransport(), NullTransport()), fast_settings)
+    assert queue.hardware_online is False
+
+    # With no real board attached there is nothing to report.
+    emulator_only = BoardQueue(FanOutTransport(NullTransport()), fast_settings)
+    assert emulator_only.hardware_online is None
+
+
+def test_a_fresh_http_transport_has_no_opinion_yet():
+    assert HttpBoardTransport().online is None

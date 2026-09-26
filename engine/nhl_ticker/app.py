@@ -138,10 +138,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/healthz")
 async def healthz():
+    """Healthy means both the API is answering and, if enabled, so is the board."""
     service = _service()
+    board_online = service.queue.hardware_online
+    board_ok = board_online is not False
+    ok = service.last_error is None and board_ok
     return JSONResponse(
-        {"ok": service.last_error is None, "lastError": service.last_error},
-        status_code=200 if service.last_error is None else 503,
+        {
+            "ok": ok,
+            "lastError": service.last_error,
+            "boardOnline": board_online,
+        },
+        status_code=200 if ok else 503,
     )
 
 

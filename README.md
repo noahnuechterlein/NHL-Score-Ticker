@@ -68,7 +68,11 @@ writes against the sketch's `cmdDisplayed` flag; the poller enqueues and returns
 immediately. Goals pre-empt summaries, and stale summaries coalesce.
 
 **Poll cadence** follows game state (live / pre-game / idle) instead of hardcoded
-wall-clock rules that assumed evening games in one timezone.
+wall-clock rules that assumed evening games in one timezone. Failures back off separately,
+so a blip never inherits the 30-minute idle interval.
+
+**The slate summary** is paginated and cycles as the board's idle content, so a full
+16-game night is shown in its entirety rather than truncated at the buffer limit.
 
 **League table** rebuilt for 32 teams, keyed on the API's abbreviation. Fixes five
 abbreviations that changed since 2016 (`CLS`→`CBJ`, `LA`→`LAK`, `NJ`→`NJD`, `SJ`→`SJS`,
@@ -90,7 +94,7 @@ and `timing.py` for the details.
 - The sketch ignores writes while scrolling, and frees itself after only `delay(2000)` for
   short messages — hence both the queue and a configurable minimum dwell
 
-### Two firmware bugs worked around
+### Three firmware constraints worked around
 
 1. **Buffer overrun.** `ledText::addChar` guards with `numChar < sizeof text`, but `sizeof`
    on a `ledTextChar[150]` is 600 *bytes*, not 150 entries. It also writes to
@@ -98,8 +102,15 @@ and `timing.py` for the details.
    payloads at **149 visible characters**.
 2. **Dropped writes.** Anything sent mid-scroll is silently discarded. Handled by the queue
    rather than by sleeping and hoping.
+3. **ASCII only.** `ledTextDisplay` substitutes a space for anything outside 32-126, so
+   accented names would lose letters. Board text is ASCII-folded first: `Stützle` is sent
+   as `Stutzle` rather than `St tzle`.
 
-Both are in the sketch, which is out of scope here; the engine avoids tripping them.
+These are in the sketch, which is out of scope here; the engine avoids tripping them.
+
+URLs deliberately leave RFC 3986 sub-delims (`!`, `'`, `(`, `)`, `,`, `/`) unescaped, which
+is the byte pattern the 2016 code sent through `requests` and is known to have worked on
+this board.
 
 ## Deployment
 

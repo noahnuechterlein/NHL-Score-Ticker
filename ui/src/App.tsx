@@ -59,7 +59,12 @@ export default function App() {
         <h1 className="text-lg font-semibold tracking-tight">NHL Score Ticker</h1>
         <div className="flex items-center gap-1.5">
           <Pill on={ticker.connected} label={ticker.connected ? "connected" : "offline"} />
-          <Pill on={ticker.boardEnabled} label="board" />
+          <Pill
+            on={ticker.boardEnabled && ticker.boardOnline !== false}
+            label={
+              ticker.boardEnabled && ticker.boardOnline === false ? "board unreachable" : "board"
+            }
+          />
           <Pill on={ticker.hornEnabled} label="horn" />
         </div>
         <span className="ml-auto font-mono text-[11px] text-zinc-600">

@@ -123,6 +123,11 @@ class BoardQueue:
             "summaryPage": (self._summary_index % len(self._summary)) if self._summary else 0,
         }
 
+    @property
+    def hardware_online(self) -> bool | None:
+        """Whether the physical board answered its last write, if there is one."""
+        return getattr(self._transport, "hardware_online", None)
+
     def set_message_callback(self, callback) -> None:
         """Register the async callback fired for each message that reaches the board."""
         self._on_message = callback

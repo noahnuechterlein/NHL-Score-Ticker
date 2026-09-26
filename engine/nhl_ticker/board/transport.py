@@ -31,6 +31,9 @@ class BoardTransport(Protocol):
 class NullTransport:
     """Discards writes but keeps a log of them, for tests and emulator-only runs."""
 
+    #: Not real hardware, so its success says nothing about the board.
+    is_hardware = False
+
     def __init__(self) -> None:
         self.sent: list[str] = []
         self.cleared = 0
@@ -57,10 +60,14 @@ class HttpBoardTransport:
     stack overflow if the board stayed unreachable.
     """
 
+    is_hardware = True
+
     def __init__(self, settings: Settings | None = None, client: httpx.AsyncClient | None = None):
         self._settings = settings or default_settings
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=self._settings.http_timeout_seconds)
+        #: Outcome of the most recent write. None until something has been tried.
+        self.online: bool | None = None
 
     async def _get(self, url: str) -> bool:
         try:
@@ -75,6 +82,9 @@ class HttpBoardTransport:
         ok = await self._get(encode_url(payload, self._settings))
         if ok:
             log.info("board: %s", plain_text(payload))
+        elif self.online:
+            log.error("board at %s stopped responding", self._settings.board_host)
+        self.online = ok
         return ok
 
     async def clear(self) -> bool:
@@ -86,22 +96,38 @@ class HttpBoardTransport:
 
 
 class FanOutTransport:
-    """Sends to several transports at once, succeeding if any of them does.
+    """Sends to several transports at once.
 
-    Used to drive the real board and the UI emulator from the same queue, guaranteeing they
-    see byte-identical payloads.
+    Used to drive the real board and the UI emulator from the same queue, guaranteeing
+    they see byte-identical payloads.
+
+    Reports success only when *every* leg succeeded. Returning "any succeeded" hid the
+    case that actually matters: with the emulator always succeeding, an unreachable board
+    looked like a healthy write.
     """
+
+    is_hardware = True
 
     def __init__(self, *transports: BoardTransport) -> None:
         self._transports = [t for t in transports if t is not None]
 
+    @property
+    def hardware_online(self) -> bool | None:
+        """Whether the real board answered last time, or None if there is no real board."""
+        for transport in self._transports:
+            if getattr(transport, "is_hardware", False):
+                online = getattr(transport, "online", None)
+                if online is not None:
+                    return online
+        return None
+
     async def send(self, payload: str) -> bool:
         results = [await t.send(payload) for t in self._transports]
-        return any(results) if results else True
+        return all(results) if results else True
 
     async def clear(self) -> bool:
         results = [await t.clear() for t in self._transports]
-        return any(results) if results else True
+        return all(results) if results else True
 
     async def aclose(self) -> None:
         for transport in self._transports:

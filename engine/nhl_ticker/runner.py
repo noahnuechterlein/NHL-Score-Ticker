@@ -217,6 +217,7 @@ class TickerService:
             "queue": self._queue.describe(),
             "pollSeconds": self.poll_interval(self.scoreboard),
             "boardEnabled": self._settings.board_enabled,
+            "boardOnline": self._queue.hardware_online,
             "hornEnabled": self._settings.horn_enabled,
             "lastError": self.last_error,
         }
