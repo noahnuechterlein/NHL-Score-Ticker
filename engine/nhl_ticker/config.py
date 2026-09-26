@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     poll_live_seconds: float = 8.0
     poll_pregame_seconds: float = 300.0
     poll_idle_seconds: float = 1800.0
+    #: First retry delay after a failed poll. Failures must not inherit the idle interval:
+    #: a blip at startup leaves us with no scoreboard at all, which reads as "idle".
+    poll_error_seconds: float = 5.0
+    #: Ceiling on the exponential retry backoff.
+    poll_error_max_seconds: float = 60.0
 
     # --- Arduino LED board ---
     board_enabled: bool = False

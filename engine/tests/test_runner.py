@@ -121,6 +121,63 @@ async def test_a_failing_fetch_does_not_raise_out_of_the_service():
     assert service.snapshot()["games"] == []
 
 
+# ------------------------------------------------------------------ failure backoff
+
+
+def test_a_failed_poll_retries_quickly_rather_than_waiting_out_the_idle_interval():
+    """A network blip at startup left scoreboard=None, so poll_interval returned the
+    idle value and the ticker went silent for half an hour."""
+    cfg = Settings(poll_idle_seconds=1800.0, poll_error_seconds=5.0)
+    service, _, _ = build(make_scoreboard(), settings=cfg)
+
+    service.note_failure()
+    assert service.next_interval() <= 10.0
+
+
+def test_backoff_grows_but_stays_bounded():
+    cfg = Settings(poll_error_seconds=5.0, poll_error_max_seconds=60.0)
+    service, _, _ = build(make_scoreboard(), settings=cfg)
+
+    seen = []
+    for _ in range(10):
+        service.note_failure()
+        seen.append(service.next_interval())
+
+    assert seen[0] < seen[1] < seen[2], "backoff should grow"
+    assert max(seen) <= cfg.poll_error_max_seconds
+    assert seen == sorted(seen), "backoff must never shrink while failing"
+
+
+def test_backoff_never_exceeds_the_healthy_interval_when_that_is_shorter():
+    """Failing during live play must not slow us below the normal live cadence."""
+    cfg = Settings(
+        poll_live_seconds=8.0, poll_error_seconds=5.0, poll_error_max_seconds=60.0
+    )
+    service, _, _ = build(make_scoreboard(make_game(state="LIVE")), settings=cfg)
+    service.scoreboard = make_scoreboard(make_game(state="LIVE"))
+
+    for _ in range(10):
+        service.note_failure()
+    assert service.next_interval() <= cfg.poll_live_seconds
+
+
+async def test_a_successful_poll_clears_the_backoff():
+    cfg = Settings(
+        board_frame_ms=0.0,
+        board_min_dwell_seconds=0.0,
+        board_static_hold_seconds=0.0,
+        poll_error_seconds=5.0,
+    )
+    service, _, _ = build(make_scoreboard(make_game(state="LIVE")), settings=cfg)
+
+    for _ in range(5):
+        service.note_failure()
+    assert service.next_interval() > cfg.poll_error_seconds
+
+    await service.poll_once()
+    assert service.next_interval() == service.poll_interval(service.scoreboard)
+
+
 # ------------------------------------------------------------------ fake goals
 
 

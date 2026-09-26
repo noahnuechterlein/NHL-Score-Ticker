@@ -50,6 +50,8 @@ class TickerService:
 
         self._task: asyncio.Task | None = None
         self._poll_now = asyncio.Event()
+        #: Consecutive failed polls, driving the retry backoff.
+        self._failures = 0
 
     @property
     def hub(self) -> BroadcastHub:
@@ -96,6 +98,32 @@ class TickerService:
             return self._settings.poll_pregame_seconds
         return self._settings.poll_idle_seconds
 
+    def note_failure(self) -> None:
+        self._failures += 1
+
+    def note_success(self) -> None:
+        self._failures = 0
+
+    def next_interval(self) -> float:
+        """How long to wait before the next poll.
+
+        While healthy this is just the state-derived cadence. After a failure it is an
+        exponential backoff instead -- the healthy cadence is wrong here, because a
+        failure usually means ``self.scoreboard`` is stale or absent, and an absent
+        scoreboard reads as "idle", i.e. up to half an hour of silence after a single
+        blip at startup.
+
+        The backoff is also capped by the healthy interval: failing during live play must
+        never make us poll more slowly than live play already demands.
+        """
+        healthy = self.poll_interval(self.scoreboard)
+        if not self._failures:
+            return healthy
+
+        backoff = self._settings.poll_error_seconds * (2 ** (self._failures - 1))
+        backoff = min(backoff, self._settings.poll_error_max_seconds)
+        return min(backoff, healthy)
+
     # ------------------------------------------------------------------ the loop
 
     async def _run(self) -> None:
@@ -106,13 +134,19 @@ class TickerService:
                 raise
             except Exception as exc:
                 # One bad response must not kill the ticker for the night.
+                self.note_failure()
                 self.last_error = f"{type(exc).__name__}: {exc}"
-                log.exception("poll failed")
+                log.warning(
+                    "poll failed (%d in a row), retrying in %.0fs: %s",
+                    self._failures,
+                    self.next_interval(),
+                    self.last_error,
+                )
                 await self._hub.broadcast(
                     {"type": "error", "message": self.last_error}, remember=False
                 )
 
-            interval = self.poll_interval(self.scoreboard)
+            interval = self.next_interval()
             # A little jitter so a restart loop does not synchronise onto the API.
             interval += random.uniform(0, min(2.0, interval * 0.1))
             try:
@@ -124,6 +158,7 @@ class TickerService:
 
     async def poll_once(self) -> Scoreboard:
         scoreboard = await self._client.fetch_scoreboard()
+        self.note_success()
         self.last_error = None
         self.scoreboard = scoreboard
 
