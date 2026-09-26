@@ -12,12 +12,14 @@ from nhl_ticker.board.protocol import (
     encode_url,
     marker,
     payload_for,
+    payloads_for,
     plain_text,
     render,
+    summary_pages,
     truncate,
     visible_length,
 )
-from nhl_ticker.config import settings
+from nhl_ticker.config import Settings, settings
 from nhl_ticker.core.events import GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 from nhl_ticker.core.league import team
 
@@ -196,3 +198,67 @@ def test_static_messages_get_the_minimum_dwell():
 def test_display_time_never_undercuts_the_firmware_hold():
     for length in range(1, 200):
         assert timing.display_seconds(length) >= timing.FIRMWARE_STATIC_HOLD_SECONDS
+
+
+# ------------------------------------------------------------------ summary pagination
+
+
+def test_a_busy_slate_is_split_across_pages_instead_of_being_truncated():
+    """16 games do not fit the 149-char buffer; the tail must not simply vanish.
+
+    The original paginated too, splitting printableGameList at 132 characters.
+    """
+    games = make_scoreboard(
+        *[make_game(game_id=i, state="FUT") for i in range(16)]
+    ).games
+    pages = summary_pages(games)
+
+    assert len(pages) > 1
+    assert all(visible_length(p) <= MAX_VISIBLE_CHARS for p in pages)
+    # Every game appears somewhere across the pages.
+    assert sum(plain_text(p).count("WSH vs BOS") for p in pages) == 16
+
+
+def test_pages_respect_the_configured_width():
+    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(12)]).games
+    narrow = Settings(board_summary_max_chars=40)
+
+    pages = summary_pages(games, narrow)
+    # Only a page forced to hold a single oversized game may exceed the target.
+    assert all(visible_length(p) <= 40 or plain_text(p).count("vs") == 1 for p in pages)
+
+
+def test_a_short_slate_still_fits_on_one_page():
+    games = make_scoreboard(
+        make_game(game_id=1, state="FINAL"),
+        make_game(game_id=2, away="NYR", home="NYI", state="FINAL"),
+    ).games
+    assert len(summary_pages(games)) == 1
+
+
+def test_pages_never_split_a_single_game_across_two(live_fixture):
+    """Every page must be a whole number of matchups, however the slate divides."""
+    for page in summary_pages(live_fixture.games):
+        text = plain_text(page).strip()
+        assert text
+        # A page that ended mid-matchup would leave a dangling separator.
+        assert not text.endswith("-")
+
+
+def test_pagination_bounds_how_long_a_goal_waits_behind_a_summary():
+    """The board cannot be interrupted mid-scroll, so page length is the worst-case wait."""
+    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(16)]).games
+    worst = max(timing.display_seconds(visible_length(p)) for p in summary_pages(games))
+    assert worst < 14.0
+
+
+def test_an_empty_slate_produces_no_pages():
+    assert summary_pages([]) == []
+
+
+def test_payloads_for_expands_summaries_but_not_goals():
+    games = make_scoreboard(*[make_game(game_id=i, state="FUT") for i in range(16)]).games
+    assert len(payloads_for(SummaryTick(games=games))) > 1
+
+    event = _goal_event(home_score=1, goals=[make_goal("WSH", "Ovechkin", 0, 1)])
+    assert len(payloads_for(event)) == 1

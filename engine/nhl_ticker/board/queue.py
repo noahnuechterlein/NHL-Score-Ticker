@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from ..config import Settings, settings as default_settings
 from ..core.events import Event, Priority, SummaryTick
 from . import timing
-from .protocol import payload_for, plain_text, visible_length
+from .protocol import payloads_for, plain_text, visible_length
 from .transport import BoardTransport
 
 log = logging.getLogger(__name__)
@@ -112,25 +112,29 @@ class BoardQueue:
     # ------------------------------------------------------------------ producing
 
     def submit(self, event: Event) -> None:
-        """Enqueue an event. Never blocks, never touches the network."""
-        payload = payload_for(event, self._settings)
+        """Enqueue an event. Never blocks, never touches the network.
+
+        A summary of a busy slate is too wide for one message, so it arrives as several
+        pages; they are queued together and shown in order.
+        """
+        payloads = payloads_for(event, self._settings)
 
         if isinstance(event, SummaryTick):
-            # A newer snapshot of the slate makes any older one pointless.
-            dropped = len(self._items)
+            # A newer snapshot of the slate makes every page of the old one pointless.
+            before = len(self._items)
             self._items = [i for i in self._items if not isinstance(i.event, SummaryTick)]
-            dropped -= len(self._items)
-            if dropped:
-                log.debug("coalesced %d stale summary tick(s)", dropped)
+            if before != len(self._items):
+                log.debug("coalesced %d stale summary page(s)", before - len(self._items))
 
-        self._items.append(
-            _QueueItem(
-                priority=int(event.priority),
-                sequence=next(self._counter),
-                event=event,
-                payload=payload,
+        for payload in payloads:
+            self._items.append(
+                _QueueItem(
+                    priority=int(event.priority),
+                    sequence=next(self._counter),
+                    event=event,
+                    payload=payload,
+                )
             )
-        )
         self._wakeup.set()
 
     # ------------------------------------------------------------------ consuming

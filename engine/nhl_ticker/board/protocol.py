@@ -225,6 +225,39 @@ def summary_segments(games: list[Game]) -> list[Segment]:
     return segments
 
 
+def summary_pages(games: list[Game], settings: Settings | None = None) -> list[str]:
+    """Split the slate into board-sized pages, packed greedily.
+
+    A 16-game night overflows the 149-character buffer, so without this the tail of the
+    slate would simply never be shown. Pages also bound how long a goal alert can sit
+    behind a summary, since the board cannot be interrupted mid-scroll.
+    """
+    cfg = settings or default_settings
+    limit = min(cfg.board_summary_max_chars, MAX_VISIBLE_CHARS)
+
+    pages: list[str] = []
+    current: list[Game] = []
+    for game in games:
+        candidate = current + [game]
+        if current and visible_length(render(summary_segments(candidate), cfg)) > limit:
+            pages.append(truncate(render(summary_segments(current), cfg)))
+            current = [game]
+        else:
+            current = candidate
+    if current:
+        pages.append(truncate(render(summary_segments(current), cfg)))
+    return pages
+
+
+def payloads_for(event: Event, settings: Settings | None = None) -> list[str]:
+    """Every board message this event produces. Only summaries yield more than one."""
+    if isinstance(event, SummaryTick):
+        return summary_pages(event.games, settings) or [
+            render([Segment(LEAD_IN)], settings)
+        ]
+    return [payload_for(event, settings)]
+
+
 def segments_for(event: Event) -> list[Segment]:
     match event:
         case GoalEvent():

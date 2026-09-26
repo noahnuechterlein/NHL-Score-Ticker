@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     board_static_hold_seconds: float = 2.0
     #: Brightness byte appended to every ~RRGGBB colour code.
     board_brightness: str = "30"
+    #: Target visible width of one page of the slate summary. A full 16-game night does not
+    #: fit in the 149-character buffer, and a single maximum-length message owns the board
+    #: for ~20s, which is how long a goal would then wait. Paginating bounds both. The
+    #: original did the same thing, splitting printableGameList at 132 characters.
+    #: Lower means a goal waits less time behind a summary but the slate takes more pages
+    #: to cycle through; 60 chars is about 12s a page.
+    board_summary_max_chars: int = 60
 
     # --- goal horns ---
     horn_enabled: bool = False
