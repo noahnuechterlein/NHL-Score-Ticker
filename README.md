@@ -40,9 +40,11 @@ Open the UI and hit **Fake goal** to push a synthetic goal through the entire ch
 engine/nhl_ticker/
   nhl/          NHL API client and models
   core/         league table, diff engine, events, serialisation
-  board/        payload protocol, scroll timing, priority queue, transports
+  board/        protocol.py (wire format) + messages.py (what to say),
+                timing, priority queue, transports
   sinks/        goal horn, WebSocket broadcast
   runner.py     the poll loop
+  cadence.py    poll interval selection and failure backoff
   app.py        FastAPI: /api/*, /ws, serves the built UI
 ui/src/
   font.ts       font bitmap extracted verbatim from the firmware
@@ -50,7 +52,7 @@ ui/src/
   components/LedBoard.tsx   the emulator
 ui/scripts/
   check-font.ts guards glyph orientation; runs as part of `npm run build`
-deploy/         systemd unit for the board host
+deploy/         systemd unit + install.sh for the board host
 ```
 
 ## What changed from the original
@@ -73,6 +75,11 @@ back to rather than a queued item.
 **Poll cadence** follows game state (live / pre-game / idle) instead of hardcoded
 wall-clock rules that assumed evening games in one timezone. Failures back off separately,
 so a blip never inherits the 30-minute idle interval.
+
+**Resilience to the league changing things.** Unknown enum values degrade instead of
+raising, and the slate is validated game by game, so one malformed game is dropped rather
+than blanking the board. Board writes are retried; stale goal alerts are dropped rather
+than announced minutes late.
 
 **The slate summary** is paginated and cycles as the board's idle content, so a full
 16-game night is shown in its entirety rather than truncated at the buffer limit.
@@ -118,10 +125,17 @@ this board.
 ## Deployment
 
 ```sh
-sudo cp deploy/nhl-ticker.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now nhl-ticker
+sudo ./deploy/install.sh                      # builds the venv, installs the unit
+sudo -e /opt/nhl-score-ticker/engine/.env     # board IP, TICKER_TIMEZONE, enable sinks
+sudo systemctl restart nhl-ticker
 journalctl -u nhl-ticker -f
 ```
+
+The unit runs the virtualenv's interpreter directly rather than `uv run`, because its
+`ProtectHome=true` hides uv's cache; `install.sh` builds that venv ahead of time.
+
+**Set `TICKER_TIMEZONE`.** It defaults to the host's local zone, which is wrong on a Pi
+left at its UTC default — every start time would read hours out.
 
 ## Security note
 
