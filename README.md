@@ -140,9 +140,5 @@ The unit runs the virtualenv's interpreter directly rather than `uv run`, becaus
 **Set `TICKER_TIMEZONE`.** It defaults to the host's local zone, which is wrong on a Pi
 left at its UTC default — every start time would read hours out.
 
-## Security note
-
-`Scraper1.0/Messenger.py` in the original repo contains a **plaintext Gmail password**
-(`nhlscoreticker@gmail.com`), public since 2016. Nothing here uses it, but that account
-should be rotated or deleted. No credentials belong in this repo; configuration lives in
-`.env`, which is gitignored.
+No credentials are needed anywhere: the NHL API takes no key, and all configuration lives
+in `.env`, which is gitignored.
