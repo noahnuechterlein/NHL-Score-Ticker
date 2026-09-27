@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import make_game, make_goal, make_scoreboard
+from conftest import FakeClient, RecordingSocket, make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board.queue import BoardQueue
 from nhl_ticker.board.transport import NullTransport
@@ -12,19 +12,6 @@ from nhl_ticker.nhl.models import Scoreboard
 from nhl_ticker.runner import TickerService
 from nhl_ticker.sinks.broadcast import BroadcastHub
 from nhl_ticker.sinks.horn import HornSink, NullPlayer
-
-
-class StubClient:
-    """Serves a canned sequence of scoreboards instead of calling the NHL API."""
-
-    def __init__(self, *scoreboards: Scoreboard):
-        self._scoreboards = list(scoreboards)
-        self.calls = 0
-
-    async def fetch_scoreboard(self, date: str | None = None) -> Scoreboard:
-        board = self._scoreboards[min(self.calls, len(self._scoreboards) - 1)]
-        self.calls += 1
-        return board
 
 
 @pytest.fixture
@@ -40,16 +27,12 @@ def build(*scoreboards: Scoreboard, settings: Settings | None = None, horn=None)
     )
     transport = NullTransport()
     queue = BoardQueue(transport, cfg)
-    service = TickerService(StubClient(*scoreboards), queue, BroadcastHub(), cfg, horn=horn)
+    # Default to a single empty slate: the interval-selection tests below never poll, but a
+    # client still has to be able to serve something if one did.
+    service = TickerService(
+        FakeClient(*(scoreboards or (make_scoreboard(),))), queue, BroadcastHub(), cfg, horn=horn
+    )
     return service, transport, queue
-
-
-class RecordingSocket:
-    def __init__(self) -> None:
-        self.messages: list[dict] = []
-
-    async def send_json(self, message: dict) -> None:
-        self.messages.append(message)
 
 
 # ------------------------------------------------------------------ cadence

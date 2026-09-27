@@ -19,6 +19,7 @@ from conftest import make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board.protocol import (
     encode_url,
+    plain_text,
 )
 from nhl_ticker.board.messages import (
     payload_for,
@@ -78,6 +79,16 @@ def build_cases(live_fixture, future_fixture) -> dict[str, object]:
 
     cases["goal_url"] = encode_url(cases["goal"], PINNED)
     cases["game_end_url"] = encode_url(cases["game_end_ot"], PINNED)
+
+    # The engine's own reading of each payload. Without this the TypeScript parity check
+    # can only compare its parser against itself -- and since both its functions share one
+    # marker walk, that cannot detect a disagreement with this side. Proven: breaking
+    # MARKER_LEN in the emulator left the check passing until these were added.
+    cases["plain"] = {
+        name: plain_text(value) if isinstance(value, str) else [plain_text(v) for v in value]
+        for name, value in cases.items()
+        if not name.endswith("_url")
+    }
     return cases
 
 
@@ -99,9 +110,23 @@ def test_wire_format_is_unchanged(cases):
 
 def test_every_snapshotted_payload_is_pure_ascii(cases):
     for name, value in cases.items():
+        if name == "plain":
+            continue
         payloads = value if isinstance(value, list) else [value]
         for payload in payloads:
             assert all(32 <= ord(c) <= 126 for c in payload), name
+
+
+def test_the_snapshot_records_the_engines_reading_of_every_payload():
+    """The TypeScript parity check needs a cross-language reference, not a self-comparison."""
+    import json as _json
+
+    recorded = _json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    assert "plain" in recorded
+    for name, value in recorded.items():
+        if name.endswith("_url") or name == "plain":
+            continue
+        assert name in recorded["plain"], f"no expected text recorded for {name}"
 
 
 def test_the_snapshot_actually_covers_the_interesting_cases(cases):

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import make_game, make_goal, make_scoreboard
+from conftest import FakeClient, RecordingSocket, make_game, make_goal, make_scoreboard
 
 from nhl_ticker.board.queue import BoardQueue
 from nhl_ticker.board.transport import FanOutTransport, NullTransport
@@ -18,32 +18,6 @@ from nhl_ticker.nhl.models import Scoreboard
 from nhl_ticker.runner import TickerService
 from nhl_ticker.sinks.broadcast import BroadcastHub
 from nhl_ticker.sinks.horn import HornSink, NullPlayer
-
-
-class ScriptedClient:
-    """Walks through a scripted sequence, one snapshot per poll."""
-
-    def __init__(self, *scoreboards: Scoreboard):
-        self._scoreboards = list(scoreboards)
-        self.index = 0
-
-    async def fetch_scoreboard(self, date: str | None = None) -> Scoreboard:
-        board = self._scoreboards[min(self.index, len(self._scoreboards) - 1)]
-        self.index += 1
-        return board
-
-
-class RecordingSocket:
-    """Stands in for a connected UI client."""
-
-    def __init__(self) -> None:
-        self.messages: list[dict] = []
-
-    async def send_json(self, message: dict) -> None:
-        self.messages.append(message)
-
-    def of_type(self, kind: str) -> list[dict]:
-        return [m for m in self.messages if m.get("type") == kind]
 
 
 @pytest.fixture
@@ -101,7 +75,7 @@ def build(instant: Settings):
     queue = BoardQueue(FanOutTransport(board), instant)
     player = NullPlayer()
     service = TickerService(
-        ScriptedClient(*a_game_in_three_periods()),
+        FakeClient(*a_game_in_three_periods()),
         queue,
         hub,
         instant,
@@ -172,7 +146,7 @@ async def test_the_emulator_and_the_board_receive_identical_bytes(instant):
     hub = BroadcastHub()
     queue = BoardQueue(FanOutTransport(hardware, emulator), instant)
     service = TickerService(
-        ScriptedClient(*a_game_in_three_periods()), queue, hub, instant
+        FakeClient(*a_game_in_three_periods()), queue, hub, instant
     )
     queue.set_message_callback(service.on_board_message)
 

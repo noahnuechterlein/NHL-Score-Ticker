@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import make_game, make_scoreboard
+from conftest import MATCHUPS, FakeClient, make_game, make_scoreboard
 
 from nhl_ticker.board.protocol import (
     plain_text,
@@ -31,27 +31,6 @@ from nhl_ticker.runner import TickerService
 from nhl_ticker.sinks.broadcast import BroadcastHub
 
 from test_queue import goal_event
-
-
-class RepeatClient:
-    """Returns the same slate every poll, like a quiet period during live games."""
-
-    def __init__(self, scoreboard: Scoreboard):
-        self._scoreboard = scoreboard
-        self.calls = 0
-
-    async def fetch_scoreboard(self, date: str | None = None) -> Scoreboard:
-        self.calls += 1
-        return self._scoreboard
-
-
-#: Distinct matchups, so pages are textually distinguishable from one another. Using the
-#: same teams for every game makes every page identical and hides rotation bugs.
-MATCHUPS = [
-    ("BOS", "WSH"), ("NYR", "NYI"), ("DAL", "MIN"), ("WPG", "COL"),
-    ("TOR", "MTL"), ("EDM", "CGY"), ("VGK", "SJS"), ("PHI", "PIT"),
-    ("CHI", "STL"), ("DET", "CBJ"), ("FLA", "TBL"), ("VAN", "SEA"),
-]
 
 
 def busy_slate(count: int = 12) -> Scoreboard:
@@ -93,7 +72,7 @@ async def test_every_summary_page_reaches_the_board_during_live_polling(quick):
 
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    service = TickerService(RepeatClient(slate), queue, BroadcastHub(), quick)
+    service = TickerService(FakeClient(slate), queue, BroadcastHub(), quick)
     await service.start()
 
     # Poll far more often than a page can be displayed, as live play does.
@@ -115,7 +94,7 @@ async def test_pages_advance_in_order_rather_than_repeating_the_first(quick):
 
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    service = TickerService(RepeatClient(slate), queue, BroadcastHub(), quick)
+    service = TickerService(FakeClient(slate), queue, BroadcastHub(), quick)
     await service.start()
     for _ in range(40):
         await service.poll_once()
@@ -134,7 +113,7 @@ async def test_a_goal_still_pre_empts_the_rotating_summary(quick):
     slate = busy_slate()
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    service = TickerService(RepeatClient(slate), queue, BroadcastHub(), quick)
+    service = TickerService(FakeClient(slate), queue, BroadcastHub(), quick)
     await service.start()
 
     await service.poll_once()
@@ -167,14 +146,14 @@ async def test_summary_content_stays_fresh_as_scores_change(quick):
 
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    client = RepeatClient(first)
+    client = FakeClient(first)
     service = TickerService(client, queue, BroadcastHub(), quick)
     await service.start()
 
     for _ in range(10):
         await service.poll_once()
         await asyncio.sleep(quick.poll_live_seconds)
-    client._scoreboard = later
+    client.scoreboards = [later]
     for _ in range(30):
         await service.poll_once()
         await asyncio.sleep(quick.poll_live_seconds)
@@ -188,7 +167,7 @@ async def test_a_single_page_slate_still_works(quick):
     slate = make_scoreboard(make_game(game_id=1, state="LIVE"))
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    service = TickerService(RepeatClient(slate), queue, BroadcastHub(), quick)
+    service = TickerService(FakeClient(slate), queue, BroadcastHub(), quick)
     await service.start()
     for _ in range(10):
         await service.poll_once()
@@ -202,7 +181,7 @@ async def test_a_single_page_slate_still_works(quick):
 async def test_an_empty_slate_displays_nothing_rather_than_crashing(quick):
     transport = NullTransport()
     queue = BoardQueue(transport, quick)
-    service = TickerService(RepeatClient(make_scoreboard()), queue, BroadcastHub(), quick)
+    service = TickerService(FakeClient(make_scoreboard()), queue, BroadcastHub(), quick)
     await service.start()
     for _ in range(5):
         await service.poll_once()

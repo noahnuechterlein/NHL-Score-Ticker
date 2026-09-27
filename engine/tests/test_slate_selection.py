@@ -11,21 +11,17 @@ Start times are still useful, just not once there is real hockey to report.
 
 from __future__ import annotations
 
-from conftest import make_game, make_scoreboard
+from conftest import MATCHUPS, make_game, make_scoreboard
 
 from nhl_ticker.board.messages import slate_for_summary, summary_pages
 from nhl_ticker.board.protocol import plain_text
 
 
 def games(*specs: tuple[int, str]) -> list:
-    """Build a slate from (id, state) pairs with distinguishable matchups."""
-    matchups = [
-        ("BOS", "WSH"), ("NYR", "NYI"), ("DAL", "MIN"), ("WPG", "COL"),
-        ("TOR", "MTL"), ("EDM", "CGY"), ("VGK", "SJS"), ("PHI", "PIT"),
-    ]
+    """Build a slate from (id, state) pairs, each game with a distinct matchup."""
     return make_scoreboard(
         *[
-            make_game(game_id=i, away=matchups[i][0], home=matchups[i][1], state=state)
+            make_game(game_id=i, away=MATCHUPS[i][0], home=MATCHUPS[i][1], state=state)
             for i, state in specs
         ]
     ).games

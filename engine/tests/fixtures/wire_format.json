@@ -14,5 +14,21 @@
     "~ffffe630     ~ff000030WSH~ffffe630 2-0 ~fcb93030BOS~ffffe630 P1   ~ff500030NYI~ffffe630 0-0 ~005dab30NYR~ffffe630 F"
   ],
   "goal_url": "http://10.177.105.137/arduino/text/~ffffe630%20%20%20%20%20~ff000030WSH~ffffe630%203-2%20~fcb93030BOS~ffffe630%20%20~ff000030WSH~ffffe630%20Goal!%20Kyrou%20PP%20(J.%20Chychrun)",
-  "game_end_url": "http://10.177.105.137/arduino/text/~ffffe630%20%20%20%20%20~ff000030WSH~ffffe630%203-2%20~fcb93030BOS~ffffe630%20F/OT"
+  "game_end_url": "http://10.177.105.137/arduino/text/~ffffe630%20%20%20%20%20~ff000030WSH~ffffe630%203-2%20~fcb93030BOS~ffffe630%20F/OT",
+  "plain": {
+    "goal": "     WSH 3-2 BOS  WSH Goal! Kyrou PP (J. Chychrun)",
+    "goal_accented": "     WSH 1-0 BOS  OTT Goal! Stutzle PP (O. Back)",
+    "game_end_ot": "     WSH 3-2 BOS F/OT",
+    "game_start": "     WSH vs BOS underway",
+    "summary_finished": "     WSH 3-2 BOS F/OT   NYI 1-6 NYR F   MIN 1-2 DAL F   COL 5-2 WPG F",
+    "summary_pages_scheduled": [
+      "     BOS vs UTA 6:00   BUF vs DAL 6:00   MTL vs NSH 6:00",
+      "     OTT vs PHI 6:00   TBL vs MIN 6:00   CAR vs VAN 6:00",
+      "     NYI vs CHI 6:30   STL vs SJS 7:00   CGY vs COL 8:00",
+      "     VGK vs TOR 9:00"
+    ],
+    "summary_mixed_slate": [
+      "     WSH 2-0 BOS P1   NYI 0-0 NYR F"
+    ]
+  }
 }

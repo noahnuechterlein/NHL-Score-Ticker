@@ -41,9 +41,9 @@ class Settings(BaseSettings):
     board_host: str = "10.177.105.137"
     #: Visible character cells. CHARS in LEDWebText.ino.
     board_chars: int = 22
-    #: Rows of pixels per character. ROWS in the sketch.
-    board_rows: int = 7
-    #: Pixel columns per character cell, the last of which is always blank. COLS in the sketch.
+    #: Pixel columns per character cell, the last of which is always blank. COLS in the
+    #: sketch. The row count is fixed by the panel and lives in the emulator's font module;
+    #: only the column count feeds a calculation here.
     board_cols: int = 6
     #: Milliseconds the sketch takes to push one frame (one column of scroll). Measured on
     #: hardware during bring-up; ~924 pixels x 24 bits x 1.4us plus delay(1).

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ..config import Settings, settings as default_settings
 from ..core.events import Event, GameEndEvent, GameStartEvent, GoalEvent, SummaryTick
 from ..core.league import team
-from ..nhl.models import Game, Goal, PeriodType
+from ..nhl.models import Game, PeriodType
 from .protocol import (
     LEAD_IN,
     MAX_VISIBLE_CHARS,

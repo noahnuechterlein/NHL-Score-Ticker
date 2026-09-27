@@ -25,10 +25,6 @@ class BroadcastHub:
         #: tab is not staring at an empty screen until the next poll.
         self._latest: dict[str, dict] = {}
 
-    @property
-    def client_count(self) -> int:
-        return len(self._clients)
-
     async def connect(self, websocket: Any) -> None:
         async with self._lock:
             self._clients.add(websocket)

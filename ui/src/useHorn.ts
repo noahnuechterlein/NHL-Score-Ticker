@@ -113,5 +113,6 @@ export function useHorn(maxSeconds = 10) {
 
   useEffect(() => stop, [stop]);
 
-  return { enabled, toggle, volume, setVolume, blocked, play, stop };
+  // `stop` stays internal: play() and toggle() use it, but nothing outside needs it.
+  return { enabled, toggle, volume, setVolume, blocked, play };
 }

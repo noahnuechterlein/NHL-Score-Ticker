@@ -7,6 +7,10 @@ rest of the engine never has to think about it.
 Fields that only exist once a game is under way (score, clock, period, goals) are optional:
 a ``FUT`` game carries none of them.
 
+Only what the ticker actually reads is modelled. Pydantic ignores keys it has no field for,
+and the recorded fixtures in ``tests/fixtures`` document the full payload better than
+half-modelled fields would -- so there is nothing to gain from carrying the rest.
+
 Everything here is deliberately lenient. The scoreboard used to validate as a single unit,
 so one unexpected value on one game failed the whole parse -- and because the poll loop
 then retried the same payload forever, a single new enum value from the league would
@@ -104,14 +108,10 @@ class TeamSide(BaseModel):
     abbrev: str = "DEF"
     score: NullableInt = 0
     sog: NullableInt = 0
-    logo: str | None = None
 
 
 class Assist(BaseModel):
-    player_id: int | None = Field(default=None, alias="playerId")
     name: Localized = ""
-
-    model_config = {"populate_by_name": True}
 
 
 class Goal(BaseModel):
@@ -125,7 +125,6 @@ class Goal(BaseModel):
     time_in_period: str = Field(default="", alias="timeInPeriod")
     player_id: int | None = Field(default=None, alias="playerId")
     name: Localized = ""
-    first_name: Localized = Field(default="", alias="firstName")
     last_name: Localized = Field(default="", alias="lastName")
     team_abbrev: Localized = Field(default="", alias="teamAbbrev")
     # "ev" | "pp" | "sh" | "en" -- absent on some older//preseason feeds.
@@ -149,24 +148,19 @@ class Goal(BaseModel):
 
 class Clock(BaseModel):
     time_remaining: str = Field(default="", alias="timeRemaining")
-    seconds_remaining: int = Field(default=0, alias="secondsRemaining")
-    running: bool = False
     in_intermission: bool = Field(default=False, alias="inIntermission")
 
     model_config = {"populate_by_name": True}
 
 
 class PeriodDescriptor(BaseModel):
-    number: NullableInt = 1
     period_type: PeriodType = Field(default=PeriodType.REG, alias="periodType")
-    max_regulation_periods: int = Field(default=3, alias="maxRegulationPeriods")
 
     model_config = {"populate_by_name": True}
 
 
 class GameOutcome(BaseModel):
     last_period_type: PeriodType = Field(default=PeriodType.REG, alias="lastPeriodType")
-    ot_periods: int = Field(default=0, alias="otPeriods")
 
     model_config = {"populate_by_name": True}
 
@@ -176,7 +170,6 @@ class Game(BaseModel):
     #: dropped by Scoreboard rather than given a meaningless placeholder.
     id: int
     game_state: GameState = Field(default=GameState.UNKNOWN, alias="gameState")
-    game_date: str = Field(default="", alias="gameDate")
     start_time_utc: str = Field(default="", alias="startTimeUTC")
     away_team: TeamSide = Field(alias="awayTeam")
     home_team: TeamSide = Field(alias="homeTeam")
@@ -247,6 +240,3 @@ class Scoreboard(BaseModel):
                 )
 
         return {**data, "games": kept}
-
-    def by_id(self) -> dict[int, Game]:
-        return {g.id: g for g in self.games}
