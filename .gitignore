@@ -8,3 +8,6 @@ __pycache__/
 node_modules/
 dist/
 engine/server.log
+
+# TypeScript incremental build cache
+*.tsbuildinfo

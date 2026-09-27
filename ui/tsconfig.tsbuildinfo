@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/display.ts","./src/font.ts","./src/main.tsx","./src/payload.ts","./src/types.ts","./src/usehorn.ts","./src/useticker.ts","./src/components/eventlog.tsx","./src/components/gamelist.tsx","./src/components/ledboard.tsx","./src/components/queueinspector.tsx"],"version":"5.9.3"}
