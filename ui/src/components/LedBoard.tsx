@@ -6,6 +6,7 @@
 // the 22-character window do not scroll at all, exactly as on the hardware.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { displayRgb, rgbCss } from "../display";
 import { CELL_COLS, GLYPH_COLS, ROW_MASK_TOP_DOWN, ROWS, glyphFor } from "../font";
 import { parsePayload, type BoardChar } from "../payload";
 
@@ -25,6 +26,9 @@ interface Props {
   /** Milliseconds per frame. Comes from the engine's board_frame_ms so the emulator and
    *  the hardware stay in step once that is calibrated. */
   frameMs?: number;
+  /** Paint the dimmed values the LEDs actually receive, rather than the legible boost.
+   *  Useful when comparing against real hardware. */
+  trueBrightness?: boolean;
   paused?: boolean;
 }
 
@@ -32,6 +36,7 @@ export default function LedBoard({
   payload,
   messageId = 0,
   frameMs = 33,
+  trueBrightness = false,
   paused = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -123,10 +128,11 @@ export default function LedBoard({
           (glyphFor(cell.ch)[pixelColumn] & ROW_MASK_TOP_DOWN[row]) !== 0;
 
         if (lit) {
-          const { r, g, b } = cell!;
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-          ctx.shadowColor = `rgb(${r}, ${g}, ${b})`;
-          ctx.shadowBlur = 6;
+          // Display-only transform; the payload and the LED values are untouched.
+          const css = rgbCss(displayRgb(cell!, trueBrightness));
+          ctx.fillStyle = css;
+          ctx.shadowColor = css;
+          ctx.shadowBlur = trueBrightness ? 6 : 8;
         } else {
           ctx.fillStyle = "#18181b";
           ctx.shadowBlur = 0;
@@ -137,7 +143,7 @@ export default function LedBoard({
       }
     }
     ctx.shadowBlur = 0;
-  }, [chars, offset, scrolls]);
+  }, [chars, offset, scrolls, trueBrightness]);
 
   const progress = scrolls ? Math.round((offset / Math.max(1, cycleColumns)) * 100) : 100;
 

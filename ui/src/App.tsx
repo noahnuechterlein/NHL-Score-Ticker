@@ -49,6 +49,7 @@ export default function App() {
   const ticker = useTicker();
   const horn = useHorn(ticker.hornMaxSeconds);
   const [team, setTeam] = useState("");
+  const [trueBrightness, setTrueBrightness] = useState(false);
 
   // Fires on every goal the engine reports, including injected test goals. Timed with the
   // event rather than the board message, matching when the engine's own horn sounds.
@@ -129,11 +130,25 @@ export default function App() {
           <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
             LED board emulator
           </h2>
-          {ticker.board && (
-            <span className="font-mono text-[11px] text-zinc-600">
-              {ticker.board.kind} · hold {ticker.board.holdSeconds.toFixed(1)}s
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-400"
+              title="Paint the dimmed values the LEDs actually receive. Colours on screen are boosted by default because the board's 0x30 brightness leaves them near-black on a monitor; the payload is identical either way."
+            >
+              <input
+                type="checkbox"
+                checked={trueBrightness}
+                onChange={(event) => setTrueBrightness(event.target.checked)}
+                className="h-3 w-3 accent-zinc-500"
+              />
+              true LED brightness
+            </label>
+            {ticker.board && (
+              <span className="font-mono text-[11px] text-zinc-600">
+                {ticker.board.kind} · hold {ticker.board.holdSeconds.toFixed(1)}s
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -141,6 +156,7 @@ export default function App() {
             payload={payload}
             messageId={ticker.board?.sentAt}
             frameMs={ticker.boardFrameMs}
+            trueBrightness={trueBrightness}
           />
         </div>
 
@@ -154,11 +170,14 @@ export default function App() {
                 <span
                   key={index}
                   className="inline-flex items-center gap-1 rounded border border-zinc-800 bg-zinc-900/40 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500"
-                  title="Colour after the sketch folds in brightness: (channel * br) >> 8"
+                  title={`Marker ${m.raw} — the LEDs receive ${m.ledCss} after the sketch folds in brightness: (channel * br) >> 8. The swatch shows the nominal colour so it is visible on screen.`}
                 >
                   <span
                     className="h-2.5 w-2.5 rounded-sm"
-                    style={{ backgroundColor: m.css, boxShadow: `0 0 4px ${m.css}` }}
+                    style={{
+                      backgroundColor: m.nominalCss,
+                      boxShadow: `0 0 4px ${m.nominalCss}`,
+                    }}
                   />
                   {m.raw}
                 </span>

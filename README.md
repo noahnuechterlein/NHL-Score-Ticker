@@ -98,7 +98,10 @@ and `timing.py` for the details.
 
 - `GET http://<board-ip>/arduino/text/<payload>`; also `text2/` and `clear`
 - Payload is ASCII plus `~RRGGBBLL` colour markers — RGB and a brightness byte folded in as
-  `(channel * br) >> 8`, so `#ff0000` at `0x30` reaches the LEDs as `rgb(47, 0, 0)`
+  `(channel * br) >> 8`, so `#ff0000` at `0x30` reaches the LEDs as `rgb(47, 0, 0)`.
+  The emulator brightens that for the screen, since `rgb(47, 0, 0)` is luma 10/255 and
+  reads as off on a monitor; tick **true LED brightness** in the UI for the literal values.
+  This is display only — the payload is identical either way
 - 7 rows × 6 columns per cell (the 6th is letter spacing), 22 cells visible
 - Longer text scrolls one column per frame for `(length + 3) × 6` frames, ≈33 ms each
 - The sketch ignores writes while scrolling, and frees itself after only `delay(2000)` for

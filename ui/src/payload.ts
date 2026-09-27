@@ -5,9 +5,15 @@
 
 export interface BoardChar {
   ch: string;
+  /** Colour as the LEDs receive it, after the sketch folds brightness in. */
   r: number;
   g: number;
   b: number;
+  /** Colour as written in the marker, before that fold. Kept so the renderer can undo
+   *  the dimming for the screen without the payload or the LED values changing. */
+  nominalR: number;
+  nominalG: number;
+  nominalB: number;
 }
 
 /** The sketch initialises colour to (10, 10, 10) before it reads any marker. */
@@ -25,13 +31,28 @@ function hex(text: string, from: number, to: number): number {
  * Brightness is folded the way the sketch does it -- `(channel * br) >> 8` -- which is
  * why a nominal #ff0000 at brightness 0x30 reaches the LEDs as (47, 0, 0).
  */
-function decodeMarker(raw: string): { r: number; g: number; b: number } | null {
+interface Colour {
+  r: number;
+  g: number;
+  b: number;
+  nominalR: number;
+  nominalG: number;
+  nominalB: number;
+}
+
+function decodeMarker(raw: string): Colour | null {
   if (raw.length < MARKER_LEN) return null;
   const br = hex(raw, 7, 9);
+  const nominalR = hex(raw, 1, 3);
+  const nominalG = hex(raw, 3, 5);
+  const nominalB = hex(raw, 5, 7);
   return {
-    r: (hex(raw, 1, 3) * br) >> 8,
-    g: (hex(raw, 3, 5) * br) >> 8,
-    b: (hex(raw, 5, 7) * br) >> 8,
+    r: (nominalR * br) >> 8,
+    g: (nominalG * br) >> 8,
+    b: (nominalB * br) >> 8,
+    nominalR,
+    nominalG,
+    nominalB,
   };
 }
 
@@ -56,22 +77,28 @@ function* walk(payload: string): Generator<{ marker: string } | { ch: string }> 
 /**
  * Expand a payload into per-character colours.
  *
- * The emulator reproduces the post-brightness values rather than the nominal ones, so
- * what you see on screen is what the board would actually light up.
+ * Carries both the post-brightness values the LEDs receive and the nominal values from
+ * the marker. The renderer paints the nominal ones lifted for legibility by default --
+ * see display.ts -- and the true ones when asked.
  */
 export function parsePayload(payload: string): BoardChar[] {
   const out: BoardChar[] = [];
-  let r = DEFAULT_CHANNEL;
-  let g = DEFAULT_CHANNEL;
-  let b = DEFAULT_CHANNEL;
+  let colour: Colour = {
+    r: DEFAULT_CHANNEL,
+    g: DEFAULT_CHANNEL,
+    b: DEFAULT_CHANNEL,
+    nominalR: DEFAULT_CHANNEL,
+    nominalG: DEFAULT_CHANNEL,
+    nominalB: DEFAULT_CHANNEL,
+  };
 
   for (const step of walk(payload)) {
     if ("marker" in step) {
       const decoded = decodeMarker(step.marker);
-      if (decoded) ({ r, g, b } = decoded);
+      if (decoded) colour = decoded;
       continue;
     }
-    out.push({ ch: step.ch, r, g, b });
+    out.push({ ch: step.ch, ...colour });
   }
   return out;
 }
@@ -83,16 +110,25 @@ export function plainText(payload: string): string {
   return out;
 }
 
+export interface MarkerInfo {
+  raw: string;
+  /** What the LEDs receive, after the brightness fold. */
+  ledCss: string;
+  /** The nominal colour from the marker, for a swatch you can actually see. */
+  nominalCss: string;
+}
+
 /** Colour markers in the order they appear, for the payload inspector. */
-export function markersIn(payload: string): { raw: string; css: string }[] {
-  const found: { raw: string; css: string }[] = [];
+export function markersIn(payload: string): MarkerInfo[] {
+  const found: MarkerInfo[] = [];
   for (const step of walk(payload)) {
     if (!("marker" in step)) continue;
     const decoded = decodeMarker(step.marker);
     if (decoded) {
       found.push({
         raw: step.marker,
-        css: `rgb(${decoded.r}, ${decoded.g}, ${decoded.b})`,
+        ledCss: `rgb(${decoded.r}, ${decoded.g}, ${decoded.b})`,
+        nominalCss: `rgb(${decoded.nominalR}, ${decoded.nominalG}, ${decoded.nominalB})`,
       });
     }
   }
