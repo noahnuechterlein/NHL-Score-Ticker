@@ -31,8 +31,10 @@ from nhl_ticker.core.events import GameEndEvent, GameStartEvent, GoalEvent, Summ
 SNAPSHOT = Path(__file__).parent / "fixtures" / "wire_format.json"
 
 #: Pinned so the snapshot is reproducible anywhere: start times depend on the zone, and
-#: brightness and page width feed straight into the bytes.
+#: brightness and page width feed straight into the bytes. The host is pinned to the Yun's
+#: so the legacy HTTP URLs stay guarded even though the default board now speaks TCP.
 PINNED = Settings(
+    board_host="10.177.105.137",
     timezone="America/Chicago",
     board_brightness="30",
     board_summary_max_chars=60,

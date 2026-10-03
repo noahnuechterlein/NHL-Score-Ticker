@@ -1,8 +1,10 @@
 """Getting a payload onto the physical board -- or pretending to.
 
-``HttpBoardTransport`` is the real thing: a bare GET to the Yun, exactly as the original's
-``Printer.printToBoard`` did. ``NullTransport`` records what would have been sent, which is
-what lets the whole pipeline be developed and tested with no hardware attached.
+``TcpBoardTransport`` is the current firmware: open a socket, write the payload, close.
+``HttpBoardTransport`` is the original Yun sketch: a bare GET, exactly as the original's
+``Printer.printToBoard`` did, kept in case the board goes back to that firmware.
+``NullTransport`` records what would have been sent, which is what lets the whole pipeline
+be developed and tested with no hardware attached.
 """
 
 from __future__ import annotations
@@ -99,6 +101,57 @@ class HttpBoardTransport:
             await self._client.aclose()
 
 
+class TcpBoardTransport:
+    """Talks to the WiFi firmware over a raw TCP socket.
+
+    One connection per message: the sketch reads until the client hangs up and treats
+    everything it got as the payload, so there is no framing and no URL encoding -- the
+    marker string goes out byte for byte. Failures are logged and swallowed, as over HTTP.
+    """
+
+    is_hardware = True
+
+    def __init__(self, settings: Settings | None = None):
+        self._settings = settings or default_settings
+        #: Outcome of the most recent write. None until something has been tried.
+        self.online: bool | None = None
+
+    async def _write(self, data: bytes) -> bool:
+        cfg = self._settings
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(cfg.board_host, cfg.board_port),
+                cfg.http_timeout_seconds,
+            )
+            try:
+                writer.write(data)
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+            return True
+        except (OSError, TimeoutError) as exc:
+            log.warning("board write failed (%s): %s", type(exc).__name__, exc)
+            return False
+
+    async def send(self, payload: str) -> bool:
+        # render() has already folded to ASCII; "replace" is only a backstop.
+        ok = await self._write(payload.encode("ascii", "replace"))
+        if ok:
+            log.info("board: %s", plain_text(payload))
+        elif self.online:
+            log.error("board at %s stopped responding", describe(self._settings))
+        self.online = ok
+        return ok
+
+    async def clear(self) -> bool:
+        # The socket has no clear command, so overwrite the window with blanks.
+        return await self._write(b" " * self._settings.board_chars)
+
+    async def aclose(self) -> None:
+        return None
+
+
 class RetryingTransport:
     """Retries a wrapped transport a few times before giving up.
 
@@ -184,3 +237,21 @@ class FanOutTransport:
     async def aclose(self) -> None:
         for transport in self._transports:
             await transport.aclose()
+
+
+def describe(settings: Settings) -> str:
+    """Where board writes go, for log lines."""
+    if settings.board_protocol == "http":
+        return settings.board_url_base
+    return f"tcp://{settings.board_host}:{settings.board_port}"
+
+
+def board_transport(settings: Settings) -> RetryingTransport:
+    """The real board for the configured protocol, wrapped in retries."""
+    inner = HttpBoardTransport(settings) if settings.board_protocol == "http" else TcpBoardTransport(settings)
+    return RetryingTransport(
+        inner,
+        attempts=settings.board_write_attempts,
+        backoff_seconds=settings.board_write_backoff_seconds,
+    )
+

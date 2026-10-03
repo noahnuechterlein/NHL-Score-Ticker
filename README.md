@@ -1,14 +1,15 @@
 # NHL Score Ticker
 
-Drives a physical 22-character WS2812 LED board (Arduino Yún) with live NHL scores and goal
+Drives a physical 22-character WS2812 LED board with live NHL scores and goal
 alerts, plays each team's goal horn, and ships a local React test interface with a
 pixel-accurate board emulator so the whole thing can be developed with no hardware
 attached.
 
 A rebuild of the scraper half of
 [NHL-Score-Scraper](https://github.com/ncnuech/NHL-Score-Scraper) (2016), which scraped
-ESPN's HTML and has not run in years. **The board and its firmware are unchanged** — this
-replaces the software that feeds it.
+ESPN's HTML and has not run in years. The board is the same panel; its firmware has since
+moved from the Arduino Yún's HTTP bridge to a WiFi sketch that takes a raw TCP socket. The
+engine speaks the new one by default and still supports the old one.
 
 Everything runs locally. The only outbound traffic is to the NHL public API, plus the LAN
 call to the board.
@@ -33,6 +34,17 @@ need the one process.
 
 Open the UI and hit **Fake goal** to push a synthetic goal through the entire chain
 (diff → queue → board payload → emulator → horn) without waiting for a live game.
+
+To put a one-off message on the board without running the ticker:
+
+```sh
+uv run nhl-ticker send "Hello Kent"                  # board from .env
+uv run nhl-ticker send "Go Wild" --color 154734 --host 192.168.68.82
+uv run nhl-ticker send "~ff000030RED ~ffffe630white"  # hand-written colour markers pass through
+```
+
+It sends straight to the board, bypassing the queue, so a message sent while the ticker is
+mid-scroll is dropped by the sketch.
 
 ## Layout
 
@@ -93,10 +105,19 @@ and the player-of-the-day feature.
 
 ## Board protocol
 
-Decoded from `Arduino/LEDWebText/LEDWebText.ino`; see `engine/nhl_ticker/board/protocol.py`
-and `timing.py` for the details.
+Two firmwares, chosen with `TICKER_BOARD_PROTOCOL`:
 
-- `GET http://<board-ip>/arduino/text/<payload>`; also `text2/` and `clear`
+- **`tcp` (current, default).** The WiFi sketch listens on `<board-ip>:8080`. Open a socket,
+  write the payload bytes as-is (no URL encoding), close. There is no clear command, so
+  clearing writes a window of blanks.
+- **`http` (original Yún sketch, kept for a revert).** `GET http://<board-ip>/arduino/text/<payload>`;
+  also `text2/` and `clear`. Switch back with `TICKER_BOARD_PROTOCOL=http` and the Yún's IP.
+
+The payload format is the same on both. The rest of this section was decoded from the original
+`Arduino/LEDWebText/LEDWebText.ino`; see `engine/nhl_ticker/board/protocol.py` and
+`timing.py` for the details. The WiFi sketch may have fixed some of these, but the engine keeps
+working around them, since that's harmless if they are fixed.
+
 - Payload is ASCII plus `~RRGGBBLL` colour markers — RGB and a brightness byte folded in as
   `(channel * br) >> 8`, so `#ff0000` at `0x30` reaches the LEDs as `rgb(47, 0, 0)`.
   The emulator brightens that for the screen, since `rgb(47, 0, 0)` is luma 10/255 and
@@ -121,7 +142,7 @@ and `timing.py` for the details.
 
 These are in the sketch, which is out of scope here; the engine avoids tripping them.
 
-URLs deliberately leave RFC 3986 sub-delims (`!`, `'`, `(`, `)`, `,`, `/`) unescaped, which
+Over HTTP, URLs deliberately leave RFC 3986 sub-delims (`!`, `'`, `(`, `)`, `,`, `/`) unescaped, which
 is the byte pattern the 2016 code sent through `requests` and is known to have worked on
 this board.
 

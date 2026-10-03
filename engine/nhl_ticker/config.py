@@ -7,6 +7,7 @@ published to an external service. See .env.example for the tunables that matter.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,7 +39,14 @@ class Settings(BaseSettings):
 
     # --- Arduino LED board ---
     board_enabled: bool = False
-    board_host: str = "10.177.105.137"
+    #: How payloads reach the board. ``tcp`` is the current WiFi firmware: a raw socket that
+    #: takes the payload bytes and closes. ``http`` is the original Yun sketch,
+    #: LEDWebText.ino, kept so a firmware revert is a one-line .env change.
+    board_protocol: Literal["tcp", "http"] = "tcp"
+    #: Printed by the WiFi sketch on its serial monitor. The Yun used 10.177.105.137.
+    board_host: str = "192.168.68.82"
+    #: TCP listener port. Ignored over HTTP, which always uses port 80.
+    board_port: int = 8080
     #: Visible character cells. CHARS in LEDWebText.ino.
     board_chars: int = 22
     #: Pixel columns per character cell, the last of which is always blank. COLS in the

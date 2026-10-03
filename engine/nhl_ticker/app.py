@@ -18,9 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from .board.queue import BoardQueue
 from .board.transport import (
     FanOutTransport,
-    HttpBoardTransport,
     NullTransport,
-    RetryingTransport,
+    board_transport,
+    describe,
 )
 from .config import settings
 from .core.league import TEAMS, horn_path
@@ -37,14 +37,8 @@ def build_service() -> TickerService:
 
     transports = [BroadcastTransport(hub)]
     if settings.board_enabled:
-        transports.append(
-            RetryingTransport(
-                HttpBoardTransport(settings),
-                attempts=settings.board_write_attempts,
-                backoff_seconds=settings.board_write_backoff_seconds,
-            )
-        )
-        log.info("board sink enabled -> %s", settings.board_url_base)
+        transports.append(board_transport(settings))
+        log.info("board sink enabled -> %s", describe(settings))
     else:
         transports.append(NullTransport())
         log.info("board sink disabled; emulator only")
