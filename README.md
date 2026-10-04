@@ -14,28 +14,84 @@ engine speaks the new one by default and still supports the old one.
 Everything runs locally. The only outbound traffic is to the NHL public API, plus the LAN
 call to the board.
 
-## Quick start
+## Getting started
+
+### Prerequisites
+
+- **git**
+- **[uv](https://docs.astral.sh/uv/)**, which manages Python and the engine's dependencies.
+  It installs Python 3.12+ itself on first run, so you don't need Python already installed.
+  - Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+  - macOS / Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Node.js 22.18 or newer**, for the UI. The build runs its `.ts` check scripts directly
+  with Node, which older versions can't do.
+
+### 1. Clone
 
 ```sh
-# engine + tests, no hardware needed
-cd engine
-cp .env.example .env
-uv run --extra dev --extra horn pytest
-uv run python -m nhl_ticker            # http://127.0.0.1:8000
-
-# UI, in a second terminal
-cd ui
-npm install
-npm run dev                            # http://localhost:5173, proxies to the engine
+git clone https://github.com/noahnuechterlein/NHL-Score-Ticker.git
+cd NHL-Score-Ticker
 ```
 
-`npm run build` writes `ui/dist`, which the engine serves directly — in production you only
-need the one process.
+### 2. Set up the engine
+
+```sh
+cd engine
+cp .env.example .env                   # local settings; gitignored
+uv sync --extra dev --extra horn       # creates engine/.venv
+uv run pytest                          # no hardware needed
+```
+
+Run every engine command from `engine/`. That's where it reads `.env` from.
+
+### 3. Run it
+
+**Development, with live-reloading UI** — two terminals:
+
+```sh
+# terminal 1
+cd engine
+uv run nhl-ticker                      # engine on http://127.0.0.1:8000
+
+# terminal 2
+cd ui
+npm install
+npm run dev                            # open http://localhost:5173 (proxies to the engine)
+```
+
+**Single process.** Build the UI once, and the engine serves it:
+
+```sh
+cd ui
+npm install
+npm run build                          # writes ui/dist
+
+cd ../engine
+uv run nhl-ticker                      # open http://127.0.0.1:8000
+```
 
 Open the UI and hit **Fake goal** to push a synthetic goal through the entire chain
 (diff → queue → board payload → emulator → horn) without waiting for a live game.
 
-To put a one-off message on the board without running the ticker:
+To leave it running on a Raspberry Pi or other always-on box, see [Deployment](#deployment).
+
+### 4. Connect the board
+
+The board is off by default, so the engine starts emulator-only. Put the computer on the same
+network as the board, then:
+
+1. Check the board answers: `uv run nhl-ticker send "Hello"`. The default IP is in `.env`
+   as `TICKER_BOARD_HOST`; the WiFi sketch prints its IP on the serial monitor.
+2. In `engine/.env`, set `TICKER_BOARD_ENABLED=true` (and `TICKER_BOARD_HOST` if it differs).
+3. Restart `uv run nhl-ticker`.
+
+Optional: `TICKER_HORN_ENABLED=true` plays goal horns on the machine running the engine (the
+`horn` extra from step 2 provides the audio). If the board is running the original Yún
+firmware, set `TICKER_BOARD_PROTOCOL=http` and use its IP; see [Board protocol](#board-protocol).
+
+### Send a one-off message
+
+To put a message on the board without running the ticker:
 
 ```sh
 uv run nhl-ticker send "Hello Kent"                  # board from .env
