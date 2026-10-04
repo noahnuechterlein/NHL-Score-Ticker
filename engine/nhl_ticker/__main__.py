@@ -44,6 +44,9 @@ def send(args: argparse.Namespace) -> int:
     }
     cfg = settings.model_copy(update=overrides)
     payload = build_message(args.text, args.color, cfg)
+    if not cfg.board_enabled:
+        # send ignores the setting on purpose, but the ticker does not.
+        print("Note: the ticker itself won't drive the board until TICKER_BOARD_ENABLED=true in engine/.env.")
     print(f"Sending to {describe(cfg)}: {plain_text(payload)}")
     if asyncio.run(_send(payload, cfg)):
         print("Delivered.")

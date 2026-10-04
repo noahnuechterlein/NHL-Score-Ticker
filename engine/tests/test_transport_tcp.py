@@ -6,11 +6,14 @@ which is exactly how the sketch frames a message.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import socket
+from pathlib import Path
 
 import pytest
 
+from nhl_ticker import __main__ as cli
 from nhl_ticker.__main__ import build_message
 from nhl_ticker.board.protocol import MAX_VISIBLE_CHARS, Segment, render, visible_length
 from nhl_ticker.board.transport import (
@@ -110,3 +113,24 @@ def test_hand_marked_message_passes_through():
 
 def test_long_message_is_capped_to_the_board_buffer():
     assert visible_length(build_message("x" * 400)) == MAX_VISIBLE_CHARS
+
+
+def _send_args(port: int) -> argparse.Namespace:
+    return argparse.Namespace(text="hi", color=None, host="127.0.0.1", port=port, protocol="tcp")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_send_warns_when_the_ticker_would_not_use_the_board(monkeypatch, capsys, enabled):
+    # send reaches the board either way; the note is what stops a working one-off message
+    # passing for a wired-up ticker.
+    monkeypatch.setattr(cli, "settings", Settings(_env_file=None, board_enabled=enabled, http_timeout_seconds=1))
+
+    cli.send(_send_args(_closed_port()))
+
+    assert ("TICKER_BOARD_ENABLED=true" in capsys.readouterr().out) is not enabled
+
+
+def test_env_file_is_read_from_engine_dir_not_cwd():
+    engine_dir = Path(cli.__file__).resolve().parent.parent
+
+    assert Path(Settings.model_config["env_file"]) == engine_dir / ".env"

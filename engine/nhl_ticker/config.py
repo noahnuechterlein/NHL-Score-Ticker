@@ -17,7 +17,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="TICKER_",
-        env_file=".env",
+        # Anchored to engine/ rather than the working directory, so launching from the repo
+        # root still picks up TICKER_BOARD_ENABLED and friends instead of silently using
+        # defaults.
+        env_file=_REPO_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )

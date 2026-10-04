@@ -41,7 +41,9 @@ def build_service() -> TickerService:
         log.info("board sink enabled -> %s", describe(settings))
     else:
         transports.append(NullTransport())
-        log.info("board sink disabled; emulator only")
+        # A warning, not info: `send` reaches the board regardless of this setting, so a
+        # working one-off message is easy to mistake for a wired-up ticker.
+        log.warning("board disabled: set TICKER_BOARD_ENABLED=true in engine/.env to drive it; emulator only")
 
     horn = None
     if settings.horn_enabled:

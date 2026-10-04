@@ -42,7 +42,8 @@ uv sync --extra dev --extra horn       # creates engine/.venv
 uv run pytest                          # no hardware needed
 ```
 
-Run every engine command from `engine/`. That's where it reads `.env` from.
+Settings always come from `engine/.env`, wherever you launch the engine from. The commands
+below assume you're in `engine/`.
 
 ### 3. Run it
 
@@ -84,6 +85,10 @@ network as the board, then:
    as `TICKER_BOARD_HOST`; the WiFi sketch prints its IP on the serial monitor.
 2. In `engine/.env`, set `TICKER_BOARD_ENABLED=true` (and `TICKER_BOARD_HOST` if it differs).
 3. Restart `uv run nhl-ticker`.
+
+`send` works even while the board is disabled, so a working `send` doesn't mean the ticker is
+wired up. To check, look for `board sink enabled -> tcp://...` in the engine's startup log
+(a disabled board logs a warning instead), or the **board** indicator in the UI.
 
 Optional: `TICKER_HORN_ENABLED=true` plays goal horns on the machine running the engine (the
 `horn` extra from step 2 provides the audio). If the board is running the original Yún
