@@ -16,6 +16,8 @@ call to the board.
 
 ## Getting started
 
+Just want it running on Windows? Follow [KENT-SETUP.md](KENT-SETUP.md).
+
 ### Prerequisites
 
 - **git**
